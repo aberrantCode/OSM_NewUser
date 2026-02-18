@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>New OSM User</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f1117;
+      color: #c9d1d9;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 2.5rem 1rem;
+    }
+
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 580px;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      color: #e6edf3;
+      margin-bottom: 0.25rem;
+    }
+
+    .subtitle {
+      font-size: 0.85rem;
+      color: #8b949e;
+      margin-bottom: 2rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.82rem;
+      color: #8b949e;
+      margin-bottom: 0.3rem;
+    }
+
+    label span { color: #484f58; }
+
+    input[type=text],
+    input[type=password] {
+      width: 100%;
+      padding: 0.55rem 0.85rem;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #c9d1d9;
+      font-size: 0.95rem;
+      margin-bottom: 1.1rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input:focus { border-color: #388bfd; }
+
+    .btn-row { display: flex; gap: 0.6rem; margin-top: 0.25rem; }
+
+    button {
+      padding: 0.55rem 1.25rem;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: opacity 0.15s, background 0.15s;
+    }
+
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .btn-preview { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
+    .btn-preview:not(:disabled):hover { background: #30363d; }
+
+    .btn-create  { background: #238636; color: #fff; display: none; }
+    .btn-create:not(:disabled):hover { background: #2ea043; }
+
+    /* ── Preview box ── */
+    .preview-box {
+      display: none;
+      background: #0d1117;
+      border: 1px solid #1f6feb;
+      border-radius: 6px;
+      padding: 1.1rem 1.25rem;
+      margin-top: 1.5rem;
+    }
+
+    .preview-box h2 {
+      font-size: 0.78rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #388bfd;
+      margin-bottom: 0.85rem;
+    }
+
+    .prow {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 1rem;
+      padding: 0.3rem 0;
+      border-bottom: 1px solid #21262d;
+      font-size: 0.88rem;
+    }
+
+    .prow:last-child { border-bottom: none; }
+    .plabel { color: #8b949e; white-space: nowrap; }
+    .pvalue { font-family: 'Cascadia Code', 'Consolas', monospace; color: #e6edf3; text-align: right; word-break: break-all; }
+
+    /* ── Result box ── */
+    .result-box {
+      display: none;
+      margin-top: 1.5rem;
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+      font-size: 0.88rem;
+    }
+
+    .result-box h2 { font-size: 0.95rem; margin-bottom: 0.8rem; }
+
+    .result-box.success { background: #0a2a1a; border: 1px solid #238636; color: #3fb950; }
+    .result-box.error   { background: #2a0a0a; border: 1px solid #da3633; color: #f85149; }
+
+    .rrow {
+      display: flex;
+      gap: 0.75rem;
+      padding: 0.25rem 0;
+      align-items: baseline;
+    }
+
+    .rlabel { width: 190px; flex-shrink: 0; opacity: 0.65; }
+    .rvalue { font-family: 'Cascadia Code', 'Consolas', monospace; word-break: break-all; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>New OSM User</h1>
+  <p class="subtitle">Create a numbered Active Directory admin account</p>
+
+  <label for="baseName">
+    Base Name <span>(optional — derived from the server process user if blank)</span>
+  </label>
+  <input type="text" id="baseName" placeholder="e.g. erik" />
+
+  <label for="password">
+    Password <span>(optional — uses the configured default if blank)</span>
+  </label>
+  <input type="password" id="password" placeholder="Leave blank for default password" />
+
+  <div class="btn-row">
+    <button class="btn-preview" id="previewBtn" onclick="doPreview()">Preview</button>
+    <button class="btn-create"  id="createBtn"  onclick="doCreate()">Create Account</button>
+  </div>
+
+  <!-- Summary card (shown after Preview) -->
+  <div class="preview-box" id="previewBox">
+    <h2>Summary</h2>
+    <div class="prow"><span class="plabel">Username</span>            <span class="pvalue" id="pvUsername"></span></div>
+    <div class="prow"><span class="plabel">UPN</span>                  <span class="pvalue" id="pvUpn"></span></div>
+    <div class="prow"><span class="plabel">Target OU</span>            <span class="pvalue" id="pvOU"></span></div>
+    <div class="prow"><span class="plabel">Group</span>                <span class="pvalue" id="pvGroup"></span></div>
+    <div class="prow"><span class="plabel">Enabled</span>              <span class="pvalue">True</span></div>
+    <div class="prow"><span class="plabel">PasswordNeverExpires</span>  <span class="pvalue">True</span></div>
+    <div class="prow"><span class="plabel">CannotChangePassword</span>  <span class="pvalue">True</span></div>
+    <div class="prow"><span class="plabel">ChangePasswordAtLogon</span> <span class="pvalue">False</span></div>
+  </div>
+
+  <!-- Result (success or error) -->
+  <div class="result-box" id="resultBox">
+    <h2 id="resultTitle"></h2>
+    <div id="resultContent"></div>
+  </div>
+</div>
+
+<script>
+  // Allow Enter key in the inputs to trigger Preview
+  document.querySelectorAll('input').forEach(el =>
+    el.addEventListener('keydown', e => { if (e.key === 'Enter') doPreview(); }));
+
+  async function doPreview() {
+    const baseName   = document.getElementById('baseName').value.trim();
+    const previewBtn = document.getElementById('previewBtn');
+    const createBtn  = document.getElementById('createBtn');
+    const previewBox = document.getElementById('previewBox');
+
+    previewBtn.disabled = true;
+    previewBox.style.display = 'none';
+    createBtn.style.display  = 'none';
+    hideResult();
+
+    try {
+      const url = '/api/preview' + (baseName ? `?baseName=${encodeURIComponent(baseName)}` : '');
+      const res  = await fetch(url);
+      const data = await res.json();
+
+      if (!res.ok) {
+        showError(data.detail || data.title || 'Preview failed.');
+        return;
+      }
+
+      document.getElementById('pvUsername').textContent = data.username;
+      document.getElementById('pvUpn').textContent      = data.upn;
+      document.getElementById('pvOU').textContent       = data.targetOU;
+      document.getElementById('pvGroup').textContent    = data.groupName;
+
+      previewBox.style.display = 'block';
+      createBtn.style.display  = 'inline-block';
+    } catch (e) {
+      showError('Network error: ' + e.message);
+    } finally {
+      previewBtn.disabled = false;
+    }
+  }
+
+  async function doCreate() {
+    const baseName  = document.getElementById('baseName').value.trim();
+    const password  = document.getElementById('password').value;
+    const createBtn = document.getElementById('createBtn');
+
+    createBtn.disabled = true;
+    hideResult();
+
+    try {
+      const res  = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseName: baseName || null, password: password || null }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        showError(data.detail || data.title || 'Account creation failed.');
+        return;
+      }
+
+      showSuccess(data);
+      document.getElementById('previewBox').style.display = 'none';
+      createBtn.style.display = 'none';
+    } catch (e) {
+      showError('Network error: ' + e.message);
+    } finally {
+      createBtn.disabled = false;
+    }
+  }
+
+  function showSuccess(u) {
+    const box = document.getElementById('resultBox');
+    document.getElementById('resultTitle').textContent = 'Account Created Successfully';
+    document.getElementById('resultContent').innerHTML = rows([
+      ['Name',                 u.name],
+      ['SamAccountName',       u.samAccountName],
+      ['UPN',                  u.userPrincipalName],
+      ['Enabled',              bool(u.enabled)],
+      ['PasswordNeverExpires', bool(u.passwordNeverExpires)],
+      ['CannotChangePassword', bool(u.userCannotChangePassword)],
+      ['Member of',            u.memberOf],
+      ['OU',                   u.ou],
+    ]);
+    box.className = 'result-box success';
+    box.style.display = 'block';
+  }
+
+  function showError(msg) {
+    const box = document.getElementById('resultBox');
+    document.getElementById('resultTitle').textContent = 'Error';
+    document.getElementById('resultContent').innerHTML =
+      `<div class="rrow"><span>${esc(msg)}</span></div>`;
+    box.className = 'result-box error';
+    box.style.display = 'block';
+  }
+
+  function hideResult() {
+    document.getElementById('resultBox').style.display = 'none';
+  }
+
+  function rows(pairs) {
+    return pairs.map(([l, v]) =>
+      `<div class="rrow"><span class="rlabel">${esc(l)}</span><span class="rvalue">${esc(v ?? '')}</span></div>`
+    ).join('');
+  }
+
+  function bool(v) { return v ? 'True' : 'False'; }
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+</script>
+</body>
+</html>

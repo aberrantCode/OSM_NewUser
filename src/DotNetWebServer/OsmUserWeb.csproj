@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>OsmUserWeb</RootNamespace>
+    <AssemblyName>OsmUserWeb</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Windows-only; these packages are no-ops on non-Windows platforms -->
+    <PackageReference Include="System.DirectoryServices" Version="9.0.0" />
+    <PackageReference Include="System.DirectoryServices.AccountManagement" Version="9.0.0" />
+  </ItemGroup>
+
+</Project>
