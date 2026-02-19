@@ -55,6 +55,64 @@ The web server sits on your admin network segment. Only authorised admin worksta
 
 ---
 
+## 2a. Provision a Proxmox VM (optional)
+
+If you need to create a dedicated VM in Proxmox to host the OsmUserWeb application, the repository includes a PowerShell helper that creates a new QEMU VM named `AC-SVR1` using the Proxmox REST API.
+
+This script is intentionally conservative and designed for environments where:
+
+- You have a Proxmox API token with sufficient permissions to create and start VMs (recommended), or credentials to authenticate.
+- A Windows Nano Server ISO (or other Windows installer ISO) is already uploaded to a Proxmox storage (for example `local:iso/WindowsNano.iso`).
+- You know the target Proxmox node name, storage names (for ISO and disk), and the VM ID you want to use.
+
+The script is located at `src/PwshScript/Create-Proxmox-AC-SVR1.ps1`. It performs the following at a high level:
+
+- Authenticates to the Proxmox API (API token recommended).
+- Creates a new QEMU VM with sensible defaults (2 cores, 2 GB RAM, 32 GB disk, virtio/scsi hardware set).
+- Attaches the specified ISO as a CD-ROM and configures the VM to boot from it.
+- Starts the VM and returns the proxmox task UPID for tracking.
+
+Assumptions and notes
+- The script cannot install Windows or configure in-guest settings — it only provisions the VM and boots the installer ISO. You must complete the Windows Nano installation interactively or automate it using your existing imaging process.
+- You must adjust the variables in the script for your Proxmox host, node name, storage identifiers, ISO filename, and desired VM ID.
+- For production, create a Proxmox API token (Datacenter → Permissions → API Tokens) and prefer that over username/password. The script supports both.
+
+Usage example (PowerShell):
+
+```powershell
+# From a PowerShell prompt on an admin workstation
+cd src\PwshScript
+.\Create-Proxmox-AC-SVR1.ps1 `
+  -ProxmoxHost 'proxmox.example.local' `
+  -Node 'pve-node1' `
+  -VmId 601 `
+  -VmName 'AC-SVR1' `
+  -IsoStorage 'local' `
+  -IsoFile 'WindowsNano.iso' `
+  -DiskStorage 'local-lvm' `
+  -ApiTokenId 'apiuser!tokenid' `
+  -ApiTokenSecret (Read-Host -AsSecureString 'Proxmox API token')
+```
+
+The script prints the Proxmox API response and the task UPID; track progress in the Proxmox UI or via API.
+
+Contract (what the script does)
+- Inputs: Proxmox host, node name, VM id, VM name, ISO/storage names, API auth (token or username/password).
+- Outputs: Creates a VM on the specified node, attaches the ISO, starts the VM, and returns the task UPID.
+- Errors: Fails if authentication fails, if the VM ID is already used, or if the specified storages/ISO are not found.
+
+Edge cases
+- Existing VM with same ID: the script will abort if the VM ID already exists.
+- Missing ISO/storage name: the create call will fail — verify storage paths in Proxmox first.
+- Network/bridge name mismatch: ensure the `-Bridge` value matches a bridge on the target node (default `vmbr0`).
+
+Security
+- Do not store plaintext API tokens in source control. Use parameter prompts or a secrets manager.
+
+---
+
+---
+
 ## 3. Create the Service Account
 
 A dedicated domain account limits the blast radius of any compromise and keeps AD audit logs attributable to the service.
