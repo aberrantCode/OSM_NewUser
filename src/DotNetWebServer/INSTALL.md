@@ -185,7 +185,7 @@ It must **not** be a member of Domain Admins or any other privileged group.
 #### PowerShell equivalent (`dsacls`)
 
 ```powershell
-$ouDN     = "OU=AdminAccounts,DC=opbta,DC=com"
+$ouDN     = "OU=AdminAccounts,DC=opbta,DC=local"
 $identity = "opbta\svc-osmweb"
 
 # Create User objects in the OU
@@ -204,7 +204,7 @@ dsacls $ouDN /G "${identity}:CA;Reset Password;user"
 ### 4b. Grant "Write Members" on the target group
 
 ```powershell
-$groupDN  = "CN=Domain Admins,CN=Users,DC=opbta,DC=com"
+$groupDN  = "CN=Domain Admins,CN=Users,DC=opbta,DC=local"
 $identity = "opbta\svc-osmweb"
 
 # Allow writing the member attribute (add/remove members)
@@ -342,7 +342,7 @@ Create `C:\Services\OsmUserWeb\appsettings.Production.json` with non-secret over
     }
   },
   "AdSettings": {
-    "TargetOU":  "OU=AdminAccounts,DC=opbta,DC=com",
+    "TargetOU":  "OU=AdminAccounts,DC=opbta,DC=local",
     "GroupName": "Domain Admins"
   }
 }
