@@ -119,13 +119,13 @@ A dedicated domain account limits the blast radius of any compromise and keeps A
 
 ### 3a. Create the account
 
-Run the following on a DC or any workstation with RSAT installed. Replace `yourdomain` and `yourdomain.com` throughout this guide.
+Run the following on a DC or any workstation with RSAT installed. Replace `opbta` and `opbta.local` throughout this guide.
 
 ```powershell
 New-ADUser `
     -Name                 "svc-osmweb" `
     -SamAccountName       "svc-osmweb" `
-    -UserPrincipalName    "svc-osmweb@yourdomain.com" `
+    -UserPrincipalName    "svc-osmweb@opbta.local" `
     -AccountPassword      (Read-Host -AsSecureString "Service account password") `
     -Enabled              $true `
     -PasswordNeverExpires $true `
@@ -139,7 +139,7 @@ Run this **on the application server** as a local Administrator.
 
 ```powershell
 # Export current policy, append the right, re-import
-$account = "yourdomain\svc-osmweb"
+$account = "opbta\svc-osmweb"
 $tmpCfg  = "$env:TEMP\secpol_osmweb.cfg"
 
 secedit /export /cfg $tmpCfg /quiet
@@ -157,7 +157,7 @@ secedit /configure /cfg $tmpCfg /db secedit.sdb /quiet
 Remove-Item $tmpCfg
 ```
 
-> **Alternative (GUI):** Open **Local Security Policy → Local Policies → User Rights Assignment → Log on as a service** and add `yourdomain\svc-osmweb`.
+> **Alternative (GUI):** Open **Local Security Policy → Local Policies → User Rights Assignment → Log on as a service** and add `opbta\svc-osmweb`.
 
 ---
 
@@ -177,7 +177,7 @@ It must **not** be a member of Domain Admins or any other privileged group.
 
 1. Open **Active Directory Users and Computers**
 2. Right-click the target OU → **Delegate Control**
-3. Add `yourdomain\svc-osmweb`
+3. Add `opbta\svc-osmweb`
 4. Choose **Create a custom task to delegate**
 5. Select **Only the following objects → User objects**, check **Create selected objects in this folder**
 6. Check **General**, **Property-specific**, then select: **Read all properties**, **Write all properties**, **Reset password**
@@ -185,8 +185,8 @@ It must **not** be a member of Domain Admins or any other privileged group.
 #### PowerShell equivalent (`dsacls`)
 
 ```powershell
-$ouDN     = "OU=AdminAccounts,DC=yourdomain,DC=com"
-$identity = "yourdomain\svc-osmweb"
+$ouDN     = "OU=AdminAccounts,DC=opbta,DC=com"
+$identity = "opbta\svc-osmweb"
 
 # Create User objects in the OU
 dsacls $ouDN /G "${identity}:CC;user"
@@ -204,8 +204,8 @@ dsacls $ouDN /G "${identity}:CA;Reset Password;user"
 ### 4b. Grant "Write Members" on the target group
 
 ```powershell
-$groupDN  = "CN=Domain Admins,CN=Users,DC=yourdomain,DC=com"
-$identity = "yourdomain\svc-osmweb"
+$groupDN  = "CN=Domain Admins,CN=Users,DC=opbta,DC=com"
+$identity = "opbta\svc-osmweb"
 
 # Allow writing the member attribute (add/remove members)
 dsacls $groupDN /G "${identity}:WP;member"
@@ -280,7 +280,7 @@ New-Item -ItemType Directory -Path "C:\Services\OsmUserWeb\logs"
 
 ```powershell
 $svcPath = "C:\Services\OsmUserWeb"
-$account = "yourdomain\svc-osmweb"
+$account = "opbta\svc-osmweb"
 
 # Remove inherited permissions and apply explicit rules
 $acl = Get-Acl $svcPath
@@ -342,7 +342,7 @@ Create `C:\Services\OsmUserWeb\appsettings.Production.json` with non-secret over
     }
   },
   "AdSettings": {
-    "TargetOU":  "OU=AdminAccounts,DC=yourdomain,DC=com",
+    "TargetOU":  "OU=AdminAccounts,DC=opbta,DC=com",
     "GroupName": "Domain Admins"
   }
 }
@@ -367,7 +367,7 @@ foreach ($file in $cfgFiles) {
     }
     # Service account: read-only (needs to read config at startup)
     $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
-        "yourdomain\svc-osmweb", "Read", "Allow")))
+        "opbta\svc-osmweb", "Read", "Allow")))
     Set-Acl $file $acl
 }
 ```
@@ -407,7 +407,7 @@ Get-ChildItem Cert:\LocalMachine\My |
 ```powershell
 $thumb   = "PASTE_YOUR_THUMBPRINT_HERE"
 $cert    = Get-Item "Cert:\LocalMachine\My\$thumb"
-$account = "yourdomain\svc-osmweb"
+$account = "opbta\svc-osmweb"
 
 # Locate the private key file on disk
 $keyName = $cert.PrivateKey.CspKeyContainerInfo.UniqueKeyContainerName
@@ -456,7 +456,7 @@ The `HttpLocalOnly` binding allows health checks and monitoring agents on the sa
 
 ```powershell
 $binPath  = "C:\Services\OsmUserWeb\OsmUserWeb.exe"
-$svcAcct  = "yourdomain\svc-osmweb"
+$svcAcct  = "opbta\svc-osmweb"
 $svcPass  = Read-Host -AsSecureString "Service account password"
 $passPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
                 [Runtime.InteropServices.Marshal]::SecureStringToBSTR($svcPass))
