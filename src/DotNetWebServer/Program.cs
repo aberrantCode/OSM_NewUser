@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Cryptography.X509Certificates;
 using OsmUserWeb.Models;
 using OsmUserWeb.Services;
 
@@ -10,6 +11,22 @@ builder.Host.UseWindowsService(options => options.ServiceName = "OsmUserWeb");
 
 builder.Services.Configure<AdSettings>(builder.Configuration.GetSection("AdSettings"));
 builder.Services.AddScoped<AdUserService>();
+
+// Load TLS certificate from PFX file using EphemeralKeySet so the private key is kept
+// in memory only.  This avoids the "Access denied" failure that occurs when the service
+// account (e.g. svc-osmweb) has no loaded user profile and .NET tries to persist the
+// key to the per-user key store.  Falls back to the standard Kestrel configuration
+// (appsettings Kestrel:Endpoints) when TlsCertificate:Path is absent or the file does
+// not exist.
+var pfxPath     = builder.Configuration["TlsCertificate:Path"];
+var pfxPassword = builder.Configuration["TlsCertificate:Password"];
+if (!string.IsNullOrEmpty(pfxPath) && File.Exists(pfxPath))
+{
+    var cert = X509CertificateLoader.LoadPkcs12FromFile(pfxPath, pfxPassword,
+        X509KeyStorageFlags.EphemeralKeySet);
+    builder.WebHost.ConfigureKestrel(k =>
+        k.ConfigureHttpsDefaults(h => h.ServerCertificate = cert));
+}
 
 var app = builder.Build();
 

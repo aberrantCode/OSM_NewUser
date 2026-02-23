@@ -47,10 +47,14 @@
     Stored in the Windows registry as a service environment variable -
     never written to disk in plain text.
 
-.PARAMETER CertThumbprint
-    Thumbprint of an existing certificate in Cert:\LocalMachine\My.
+.PARAMETER CertPfxPath
+    Path to a PFX file containing the TLS certificate and private key.
     If omitted the script offers to create a self-signed certificate (testing)
     or skip TLS setup (manual configuration later).
+
+.PARAMETER CertPfxPassword
+    Password for the PFX file supplied via -CertPfxPath.
+    Prompted interactively if -CertPfxPath is given but this is omitted.
 
 .PARAMETER AdminSubnet
     CIDR range that is allowed to reach the web UI. Example: 10.0.1.0/24
@@ -82,7 +86,8 @@
         -PublishPath    .\publish `
         -TargetOU       "OU=AdminAccounts,DC=contoso,DC=com" `
         -DefaultPassword "S3cur3P@ss!" `
-        -CertThumbprint "A1B2C3D4E5F6A1B2C3D4E5F6A1B2C3D4E5F6A1B2" `
+        -CertPfxPath    "C:\certs\osmweb.pfx" `
+        -CertPfxPassword "PfxP@ss!" `
         -AdminSubnet    "10.0.1.0/24"
 
 .EXAMPLE
@@ -97,7 +102,8 @@ param(
     [string]$TargetOU,
     [string]$GroupName       = 'Domain Admins',
     [string]$DefaultPassword,
-    [string]$CertThumbprint,
+    [string]$CertPfxPath,
+    [string]$CertPfxPassword,
     [string]$AdminSubnet,
     [int]   $HttpsPort       = 443,
     [switch]$SkipAdDelegation,
@@ -205,43 +211,6 @@ namespace OsmInstall {
     [OsmInstall.LsaUtil]::GrantSeServiceLogonRight($AccountName)
 }
 
-# -- Certificate private-key ACL helper ----------------------------------------
-
-function Grant-CertPrivateKeyRead {
-    param([string]$Thumbprint, [string]$Account)
-
-    $cert = Get-Item "Cert:\LocalMachine\My\$Thumbprint" -ErrorAction Stop
-
-    $keyPath = $null
-
-    # Try CNG key (RSA-CNG, ECDSA)
-    try {
-        $rsa = [Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
-        if ($rsa -is [Security.Cryptography.RSACng]) {
-            $keyPath = Join-Path "$env:ProgramData\Microsoft\Crypto\Keys" $rsa.Key.UniqueName
-        }
-    } catch {}
-
-    # Fall back to legacy CSP (older RSA certs)
-    if (-not $keyPath -or -not (Test-Path $keyPath)) {
-        try {
-            $name    = $cert.PrivateKey.CspKeyContainerInfo.UniqueKeyContainerName
-            $keyPath = Join-Path "$env:ProgramData\Microsoft\Crypto\RSA\MachineKeys" $name
-        } catch {}
-    }
-
-    if ($keyPath -and (Test-Path $keyPath)) {
-        $acl = Get-Acl $keyPath
-        $rule = [System.Security.AccessControl.FileSystemAccessRule]::new($Account, 'Read', 'Allow')
-        $acl.AddAccessRule($rule)
-        Set-Acl $keyPath $acl
-        Write-Ok "$Account can read the certificate private key."
-    } else {
-        Write-Warn "Could not locate private key file for thumbprint $Thumbprint."
-        Write-Warn "Grant access manually: certlm.msc -> Personal -> right-click cert -> All Tasks -> Manage Private Keys"
-    }
-}
-
 # -- Helper: harden directory ACL ----------------------------------------------
 
 function Set-HardenedAcl {
@@ -300,6 +269,7 @@ Write-Host "  Log: $LogTranscript`n" -ForegroundColor DarkGray
 $script:DomainFQDN   = $null
 $script:SvcFullName  = $null
 $script:SvcPassword  = $null   # plain text - used only in memory during install
+$script:PfxPassword  = $null   # plain text - injected into registry env, never written to disk
 
 try {
 
@@ -360,33 +330,44 @@ try {
     Write-Host ''
     $script:SvcPassword = Read-PasswordConfirmed "Service account password for $($script:SvcFullName)"
 
-    # Certificate
-    if (-not $SkipCertificate -and -not $CertThumbprint) {
+    # Certificate - collect PFX path and password
+    if (-not $SkipCertificate -and -not $CertPfxPath) {
         Write-Host ''
         Write-Host '  TLS certificate options:' -ForegroundColor DarkGray
-        Write-Host '    [1] Use an existing certificate (enter thumbprint)'  -ForegroundColor DarkGray
-        Write-Host '    [2] Create a self-signed certificate (testing only)' -ForegroundColor DarkGray
-        Write-Host '    [3] Skip TLS for now (configure manually later)'     -ForegroundColor DarkGray
+        Write-Host '    [1] Use an existing PFX file (certificate + private key)' -ForegroundColor DarkGray
+        Write-Host '    [2] Create a self-signed certificate (testing only)'      -ForegroundColor DarkGray
+        Write-Host '    [3] Skip TLS for now (configure manually later)'          -ForegroundColor DarkGray
         $certChoice = Read-Host '  Choice (1/2/3)'
 
         switch ($certChoice.Trim()) {
             '1' {
-                $CertThumbprint = (Read-NonEmpty 'Certificate thumbprint').ToUpper() -replace '\s', ''
-                try { $null = Get-Item "Cert:\LocalMachine\My\$CertThumbprint" }
-                catch { throw "Certificate not found in Cert:\LocalMachine\My with thumbprint: $CertThumbprint" }
-                Write-Ok "Certificate located: $CertThumbprint"
+                $CertPfxPath = Read-NonEmpty 'Path to PFX file'
+                if (-not (Test-Path $CertPfxPath)) {
+                    throw "PFX file not found: $CertPfxPath"
+                }
+                Write-Ok "PFX file located: $CertPfxPath"
             }
             '2' {
                 Write-Warn 'Self-signed certificate is for TESTING only. Browsers will show a security warning.'
-                $cert           = New-SelfSignedCertificate `
-                    -DnsName          $env:COMPUTERNAME `
+                # Exportable so we can write it to a PFX file below.
+                $ssCert = New-SelfSignedCertificate `
+                    -DnsName           $env:COMPUTERNAME `
                     -CertStoreLocation 'Cert:\LocalMachine\My' `
-                    -NotAfter         (Get-Date).AddYears(1) `
-                    -KeyAlgorithm     RSA `
-                    -KeyLength        2048 `
-                    -KeyExportPolicy  NonExportable
-                $CertThumbprint = $cert.Thumbprint
-                Write-Ok "Self-signed certificate created. Thumbprint: $CertThumbprint"
+                    -NotAfter          (Get-Date).AddYears(1) `
+                    -KeyAlgorithm      RSA `
+                    -KeyLength         2048 `
+                    -KeyExportPolicy   Exportable
+                # Generate a random PFX password (32 base-64 chars, no ambiguous chars)
+                $pwBytes = New-Object byte[] 24
+                [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($pwBytes)
+                $CertPfxPassword = [Convert]::ToBase64String($pwBytes)
+                # Export to a temp file; the installer copies it to the install dir in Step 8
+                $CertPfxPath = Join-Path $env:TEMP "osmweb-cert-$($ssCert.Thumbprint).pfx"
+                $ssCert | Export-PfxCertificate `
+                    -FilePath          $CertPfxPath `
+                    -Password          (ConvertTo-SecureString $CertPfxPassword -AsPlainText -Force) `
+                    -CryptoAlgorithmOption AES256_SHA256 | Out-Null
+                Write-Ok "Self-signed certificate created and exported to temp PFX. Thumbprint: $($ssCert.Thumbprint)"
             }
             default {
                 $SkipCertificate = $true
@@ -394,6 +375,12 @@ try {
             }
         }
     }
+
+    # If a PFX path is known but no password was given, prompt now
+    if (-not $SkipCertificate -and $CertPfxPath -and -not $CertPfxPassword) {
+        $CertPfxPassword = Read-PasswordConfirmed 'PFX password'
+    }
+    $script:PfxPassword = $CertPfxPassword
 
     # Firewall subnet
     if (-not $SkipFirewall -and -not $AdminSubnet) {
@@ -407,7 +394,7 @@ try {
     Write-Host "  Service account: $($script:SvcFullName)"
     Write-Host "  Target OU      : $TargetOU"
     Write-Host "  Group          : $GroupName"
-    if ($CertThumbprint) { Write-Host "  Certificate    : $CertThumbprint" }
+    if ($CertPfxPath)    { Write-Host "  Certificate PFX: $CertPfxPath" }
     if ($AdminSubnet)    { Write-Host "  Admin subnet   : $AdminSubnet" }
     Write-Host ''
     $go = Read-Host '  Proceed with installation? (Y/N)'
@@ -538,36 +525,23 @@ try {
         AdSettings = [ordered]@{ TargetOU = $TargetOU; GroupName = $GroupName }
     }
 
-    if (-not $SkipCertificate -and $CertThumbprint) {
-        # Kestrel's CertificateConfig uses Subject (full DN), not Thumbprint.
-        # An unrecognised key is silently ignored, leaving the cert config empty.
-        $certObj     = Get-Item "Cert:\LocalMachine\My\$CertThumbprint"
-        $certSubject = $certObj.Subject
-
-        # Self-signed certs (Issuer == Subject) require AllowInvalid: true.
-        # When run as a service account, Windows chain validation may fail on
-        # self-signed certs due to revocation check timeouts even if the cert
-        # is present in LocalMachine\Root. AllowInvalid: true skips chain
-        # validation while leaving the TLS handshake itself fully intact.
-        $isSelfSigned = $certObj.Issuer -eq $certObj.Subject
-        if ($isSelfSigned) {
-            Write-Warn "Self-signed certificate detected - setting AllowInvalid: true in Kestrel config."
-        }
-
+    if (-not $SkipCertificate -and $CertPfxPath) {
+        # Program.cs loads the PFX with X509KeyStorageFlags.EphemeralKeySet so the
+        # private key is kept in memory only - no user-profile / key-store write
+        # required.  Kestrel only needs the HTTPS endpoint URL; the certificate
+        # itself is wired up via ConfigureHttpsDefaults before the host is built.
+        $pfxInstallPath = Join-Path $InstallPath "certs\osmweb.pfx"
         $configObj['Kestrel'] = [ordered]@{
             Endpoints = [ordered]@{
                 HttpLocalOnly = [ordered]@{ Url = 'http://localhost:5150' }
-                Https         = [ordered]@{
-                    Url         = "https://*:$HttpsPort"
-                    Certificate = [ordered]@{
-                        Subject      = $certSubject
-                        Store        = 'My'
-                        Location     = 'LocalMachine'
-                        AllowInvalid = $isSelfSigned
-                    }
-                }
+                Https         = [ordered]@{ Url = "https://*:$HttpsPort" }
             }
         }
+        $configObj['TlsCertificate'] = [ordered]@{
+            Path = $pfxInstallPath
+        }
+        # The PFX password is injected as a service registry environment variable
+        # in Step 10 (TlsCertificate__Password) - not written to the JSON file.
     }
 
     $configPath = Join-Path $InstallPath 'appsettings.Production.json'
@@ -589,12 +563,36 @@ try {
     }
     Write-Ok 'Config file ACLs restricted (Administrators + service account read-only).'
 
-    # -- Step 8: Certificate private key access -------------------------------
-    if (-not $SkipCertificate -and $CertThumbprint) {
-        Write-Step 'Step 8 . Granting certificate private key access'
-        Grant-CertPrivateKeyRead -Thumbprint $CertThumbprint -Account $script:SvcFullName
+    # -- Step 8: Deploy and secure the PFX file --------------------------------
+    if (-not $SkipCertificate -and $CertPfxPath) {
+        Write-Step 'Step 8 . Deploying PFX certificate'
+
+        $certsDir       = Join-Path $InstallPath 'certs'
+        $pfxInstallPath = Join-Path $certsDir 'osmweb.pfx'
+
+        if (-not (Test-Path $certsDir)) { New-Item -ItemType Directory -Path $certsDir | Out-Null }
+
+        Copy-Item -Path $CertPfxPath -Destination $pfxInstallPath -Force
+
+        # Restrict to SYSTEM, Administrators (full) and the service account (read).
+        $pfxAcl = Get-Acl $pfxInstallPath
+        $pfxAcl.SetAccessRuleProtection($true, $false)
+        foreach ($t in 'NT AUTHORITY\SYSTEM', 'BUILTIN\Administrators') {
+            $pfxAcl.AddAccessRule(
+                [System.Security.AccessControl.FileSystemAccessRule]::new($t, 'FullControl', 'Allow'))
+        }
+        $pfxAcl.AddAccessRule(
+            [System.Security.AccessControl.FileSystemAccessRule]::new($script:SvcFullName, 'Read', 'Allow'))
+        Set-Acl $pfxInstallPath $pfxAcl
+
+        Write-Ok "PFX deployed to $pfxInstallPath (service account: read-only)."
+
+        # Remove temp export if it was created by the self-signed path
+        if ($CertPfxPath -like "$env:TEMP\osmweb-cert-*") {
+            Remove-Item $CertPfxPath -Force -ErrorAction SilentlyContinue
+        }
     } else {
-        Write-Step 'Step 8 . Skipping certificate key access (no cert configured)'
+        Write-Step 'Step 8 . Skipping PFX deployment (no cert configured)'
     }
 
     # -- Step 9: Windows Service registration ---------------------------------
@@ -628,12 +626,16 @@ try {
     # -- Step 10: Service environment variables (secrets) ---------------------
     Write-Step 'Step 10 . Injecting secrets into service registry environment'
 
-    $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
+    $regPath  = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
+    $regEnv   = [System.Collections.Generic.List[string]]@(
+        'ASPNETCORE_ENVIRONMENT=Production',
+        "AdSettings__DefaultPassword=$DefaultPassword"
+    )
+    if ($script:PfxPassword) {
+        $regEnv.Add("TlsCertificate__Password=$($script:PfxPassword)")
+    }
     New-ItemProperty -Path $regPath -Name 'Environment' -PropertyType MultiString -Force `
-        -Value @(
-            'ASPNETCORE_ENVIRONMENT=Production',
-            "AdSettings__DefaultPassword=$DefaultPassword"
-        ) | Out-Null
+        -Value $regEnv.ToArray() | Out-Null
     Write-Ok 'Secrets written to HKLM service registry key (readable by Administrators and SYSTEM only).'
 
     # -- Step 11: Failure recovery ---------------------------------------------
@@ -707,8 +709,9 @@ try {
     Write-Host "  |  URL          : $baseUrl"                               -ForegroundColor Green
     Write-Host "  |  Target OU    : $TargetOU"                              -ForegroundColor Green
     Write-Host "  |  Group        : $GroupName"                             -ForegroundColor Green
-    if ($CertThumbprint) {
-    Write-Host "  |  Certificate  : $CertThumbprint"                        -ForegroundColor Green
+    if ($CertPfxPath) {
+    $pfxDest = Join-Path $InstallPath 'certs\osmweb.pfx'
+    Write-Host "  |  Certificate  : $pfxDest"                               -ForegroundColor Green
     }
     Write-Host '  +------------------------------------------------------+' -ForegroundColor Green
     Write-Host '  |  Next steps:                                         |' -ForegroundColor Green
