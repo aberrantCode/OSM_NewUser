@@ -9,6 +9,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Prevent the publish output directory (which lives inside the project tree)
+         from being picked up as content and copied into itself on re-publish. -->
+    <Content Remove="publish\**" />
+    <None   Remove="publish\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.0" />
     <!-- Windows-only; these packages are no-ops on non-Windows platforms -->
     <PackageReference Include="System.DirectoryServices" Version="9.0.0" />
