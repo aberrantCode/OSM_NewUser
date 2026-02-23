@@ -33,6 +33,11 @@
 .PARAMETER SvcAccountName
     SAM account name for the service account. Default: svc-osmweb
 
+.PARAMETER SvcAccountPassword
+    Password for the service account used in sc.exe create.
+    Prompted interactively if omitted.
+    Supply this to run non-interactively (e.g. via Invoke-Command).
+
 .PARAMETER TargetOU
     Distinguished name of the OU where new AD accounts will be created.
     Example: OU=AdminAccounts,DC=contoso,DC=com
@@ -66,6 +71,11 @@
     to a raw socket below 1024.  Use 8443 (or any port >= 1024) and rely on
     the Windows Firewall rule to restrict access to the admin subnet.
 
+.PARAMETER SkipAdAccount
+    Skip Step 3 (creating the service account in Active Directory).
+    Use when the account has already been created by the calling script, or
+    when running via PS Remoting where the DC is not directly reachable (double-hop).
+
 .PARAMETER SkipAdDelegation
     Skip the dsacls delegation steps when permissions are already configured.
 
@@ -73,8 +83,17 @@
     Skip TLS certificate setup. Useful when IIS handles TLS termination
     or you intend to configure the certificate manually.
 
+.PARAMETER CertSelfSigned
+    Create (or reuse) a self-signed certificate without displaying the interactive
+    certificate-method menu. Equivalent to choosing option [2] at the prompt.
+    Use for non-interactive / remote execution.
+
 .PARAMETER SkipFirewall
     Skip creating Windows Firewall rules.
+
+.PARAMETER Force
+    Skip the "Proceed with installation? (Y/N)" confirmation prompt.
+    Required when running non-interactively via Invoke-Command.
 
 .PARAMETER Uninstall
     Stop and remove the Windows Service, application files, and firewall rules.
@@ -94,24 +113,41 @@
         -AdminSubnet    "10.0.1.0/24"
 
 .EXAMPLE
+    # Non-interactive remote execution (called from Install-OsmUserWeb-Remote.ps1)
+    .\Install-OsmUserWeb.ps1 `
+        -PublishPath        C:\Windows\Temp\OsmInstall\publish `
+        -TargetOU           "OU=AdminAccounts,DC=contoso,DC=com" `
+        -DefaultPassword    "S3cur3P@ss!" `
+        -SvcAccountPassword "SvcP@ss!" `
+        -CertSelfSigned `
+        -AdminSubnet        "10.0.1.0/24" `
+        -SkipAdAccount `
+        -SkipAdDelegation `
+        -Force
+
+.EXAMPLE
     # Remove the installation
     .\Install-OsmUserWeb.ps1 -Uninstall
 #>
 [CmdletBinding()]
 param(
     [string]$PublishPath,
-    [string]$InstallPath     = 'C:\Services\OsmUserWeb',
-    [string]$SvcAccountName  = 'svc-osmweb',
+    [string]$InstallPath        = 'C:\Services\OsmUserWeb',
+    [string]$SvcAccountName     = 'svc-osmweb',
+    [string]$SvcAccountPassword,
     [string]$TargetOU,
-    [string]$GroupName       = 'Domain Admins',
+    [string]$GroupName          = 'Domain Admins',
     [string]$DefaultPassword,
     [string]$CertPfxPath,
     [string]$CertPfxPassword,
     [string]$AdminSubnet,
-    [int]   $HttpsPort       = 8443,
+    [int]   $HttpsPort          = 8443,
+    [switch]$SkipAdAccount,
     [switch]$SkipAdDelegation,
     [switch]$SkipCertificate,
+    [switch]$CertSelfSigned,
     [switch]$SkipFirewall,
+    [switch]$Force,
     [switch]$Uninstall
 )
 
@@ -278,6 +314,7 @@ Write-Host "  Log: $LogTranscript`n" -ForegroundColor DarkGray
 
 # Script-scoped variables populated during input collection
 $script:DomainFQDN       = $null
+$script:DomainShort      = $null   # NetBIOS name; used to build SvcFullName
 $script:SvcFullName      = $null
 $script:SvcPassword      = $null   # plain text - used only in memory during install
 $script:PfxPassword      = $null   # plain text - used only during PFX import
@@ -299,19 +336,35 @@ try {
     }
     Write-Ok 'Server is domain-joined.'
 
-    try {
-        Import-Module ActiveDirectory -ErrorAction Stop
-        Write-Ok 'ActiveDirectory (RSAT) module loaded.'
-    } catch {
-        throw 'ActiveDirectory module not found. Install RSAT: Add-WindowsCapability -Online -Name Rsat.ActiveDirectory.DS-LDS.Tools~~~~0.0.1.0'
+    if (-not $SkipAdAccount -or -not $SkipAdDelegation) {
+        try {
+            Import-Module ActiveDirectory -ErrorAction Stop
+            Write-Ok 'ActiveDirectory (RSAT) module loaded.'
+        } catch {
+            throw 'ActiveDirectory module not found. Install RSAT: Add-WindowsCapability -Online -Name Rsat.ActiveDirectory.DS-LDS.Tools~~~~0.0.1.0'
+        }
+    } else {
+        $null = Import-Module ActiveDirectory -ErrorAction SilentlyContinue
+        Write-Ok 'AD steps skipped (-SkipAdAccount and -SkipAdDelegation) — RSAT not required.'
     }
 
     # -- Step 1: Collect inputs -----------------------------------------------
     Write-Step 'Step 1 . Collecting configuration inputs'
 
-    $script:DomainFQDN  = (Get-ADDomain).DNSRoot
-    $script:SvcFullName = "$($script:DomainFQDN.Split('.')[0])\$SvcAccountName"
-    Write-Ok "Detected domain: $($script:DomainFQDN)"
+    # Try Get-ADDomain first; fall back to WMI when running in a PS Remoting
+    # session where the DC is not directly reachable (double-hop limitation).
+    $adDomainObj = $null
+    try { $adDomainObj = Get-ADDomain -ErrorAction Stop } catch {}
+    if ($adDomainObj) {
+        $script:DomainFQDN  = $adDomainObj.DNSRoot
+        $script:DomainShort = $adDomainObj.NetBIOSName
+    } else {
+        $cs = Get-WmiObject Win32_ComputerSystem
+        $script:DomainFQDN  = $cs.Domain
+        $script:DomainShort = $cs.Domain.Split('.')[0].ToUpper()
+    }
+    $script:SvcFullName = "$($script:DomainShort)\$SvcAccountName"
+    Write-Ok "Detected domain: $($script:DomainFQDN) (NetBIOS: $($script:DomainShort))"
 
     if (-not $PublishPath) {
         $PublishPath = Read-NonEmpty 'Path to dotnet publish output (e.g. C:\temp\publish)'
@@ -327,11 +380,15 @@ try {
     if (-not $TargetOU) {
         $TargetOU = Read-NonEmpty "Target OU distinguished name`n  (e.g. OU=AdminAccounts,DC=$($script:DomainFQDN -replace '\.', ',DC='))`n  TargetOU"
     }
-    try {
-        $null = Get-ADOrganizationalUnit -Identity $TargetOU
-        Write-Ok "Target OU verified: $TargetOU"
-    } catch {
-        throw "Target OU not found in AD: $TargetOU"
+    if ($SkipAdAccount -and $SkipAdDelegation) {
+        Write-Ok "Target OU (not verified — AD steps skipped): $TargetOU"
+    } else {
+        try {
+            $null = Get-ADOrganizationalUnit -Identity $TargetOU
+            Write-Ok "Target OU verified: $TargetOU"
+        } catch {
+            throw "Target OU not found in AD: $TargetOU"
+        }
     }
 
     if (-not $DefaultPassword) {
@@ -339,17 +396,24 @@ try {
         $DefaultPassword = Read-PasswordConfirmed 'Default password for new AD accounts'
     }
 
-    Write-Host ''
-    $script:SvcPassword = Read-PasswordConfirmed "Service account password for $($script:SvcFullName)"
+    if (-not $SvcAccountPassword) {
+        Write-Host ''
+        $SvcAccountPassword = Read-PasswordConfirmed "Service account password for $($script:SvcFullName)"
+    }
+    $script:SvcPassword = $SvcAccountPassword
 
     # Certificate - collect PFX path and password
     if (-not $SkipCertificate -and -not $CertPfxPath) {
-        Write-Host ''
-        Write-Host '  TLS certificate options:' -ForegroundColor DarkGray
-        Write-Host '    [1] Use an existing PFX file (certificate + private key)' -ForegroundColor DarkGray
-        Write-Host '    [2] Create a self-signed certificate (testing only)'      -ForegroundColor DarkGray
-        Write-Host '    [3] Skip TLS for now (configure manually later)'          -ForegroundColor DarkGray
-        $certChoice = Read-Host '  Choice (1/2/3)'
+        if ($CertSelfSigned) {
+            $certChoice = '2'
+        } else {
+            Write-Host ''
+            Write-Host '  TLS certificate options:' -ForegroundColor DarkGray
+            Write-Host '    [1] Use an existing PFX file (certificate + private key)' -ForegroundColor DarkGray
+            Write-Host '    [2] Create a self-signed certificate (testing only)'      -ForegroundColor DarkGray
+            Write-Host '    [3] Skip TLS for now (configure manually later)'          -ForegroundColor DarkGray
+            $certChoice = Read-Host '  Choice (1/2/3)'
+        }
 
         switch ($certChoice.Trim()) {
             '1' {
@@ -428,11 +492,13 @@ try {
     Write-Host "  Group          : $GroupName"
     if ($CertPfxPath)    { Write-Host "  Certificate PFX: $CertPfxPath" }
     if ($AdminSubnet)    { Write-Host "  Admin subnet   : $AdminSubnet" }
-    Write-Host ''
-    $go = Read-Host '  Proceed with installation? (Y/N)'
-    if ($go -notin 'Y', 'y') {
-        Write-Host 'Aborted. No changes were made.' -ForegroundColor Yellow
-        exit 0
+    if (-not $Force) {
+        Write-Host ''
+        $go = Read-Host '  Proceed with installation? (Y/N)'
+        if ($go -notin 'Y', 'y') {
+            Write-Host 'Aborted. No changes were made.' -ForegroundColor Yellow
+            exit 0
+        }
     }
 
     # -- Step 2: .NET 9 Hosting Bundle ---------------------------------------
@@ -459,21 +525,25 @@ try {
     # -- Step 3: Service account ----------------------------------------------
     Write-Step 'Step 3 . Service account'
 
-    $existing = Get-ADUser -Filter "SamAccountName -eq '$SvcAccountName'" -ErrorAction SilentlyContinue
-    if ($existing) {
-        Write-Ok "Account already exists: $($script:SvcFullName) - skipping creation."
+    if ($SkipAdAccount) {
+        Write-Ok "Skipping AD account creation (-SkipAdAccount). Assuming '$SvcAccountName' was provisioned by the calling script."
     } else {
-        $secPw = ConvertTo-SecureString $script:SvcPassword -AsPlainText -Force
-        New-ADUser `
-            -Name                 $SvcAccountName `
-            -SamAccountName       $SvcAccountName `
-            -UserPrincipalName    "$SvcAccountName@$($script:DomainFQDN)" `
-            -AccountPassword      $secPw `
-            -Enabled              $true `
-            -PasswordNeverExpires $true `
-            -CannotChangePassword $true `
-            -Description          'OsmUserWeb service account - do not add to privileged groups'
-        Write-Ok "Service account created: $($script:SvcFullName)"
+        $existing = Get-ADUser -Filter "SamAccountName -eq '$SvcAccountName'" -ErrorAction SilentlyContinue
+        if ($existing) {
+            Write-Ok "Account already exists: $($script:SvcFullName) - skipping creation."
+        } else {
+            $secPw = ConvertTo-SecureString $script:SvcPassword -AsPlainText -Force
+            New-ADUser `
+                -Name                 $SvcAccountName `
+                -SamAccountName       $SvcAccountName `
+                -UserPrincipalName    "$SvcAccountName@$($script:DomainFQDN)" `
+                -AccountPassword      $secPw `
+                -Enabled              $true `
+                -PasswordNeverExpires $true `
+                -CannotChangePassword $true `
+                -Description          'OsmUserWeb service account - do not add to privileged groups'
+            Write-Ok "Service account created: $($script:SvcFullName)"
+        }
     }
 
     # -- Step 4: Log on as a service ------------------------------------------
