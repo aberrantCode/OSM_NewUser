@@ -476,10 +476,10 @@ try {
         Write-Step 'Step 5 . Delegating Active Directory permissions'
 
         $ouRules = @(
-            @{ Args = @($TargetOU, '/G', "$($script:SvcFullName):CC;user");   Desc = 'Create User objects in OU' }
-            @{ Args = @($TargetOU, '/G', "$($script:SvcFullName):RP;;user");  Desc = 'Read user properties in OU' }
-            @{ Args = @($TargetOU, '/G', "$($script:SvcFullName):WP;;user");  Desc = 'Write user properties in OU' }
-            @{ Args = @($TargetOU, '/G', "$($script:SvcFullName):CA;Reset Password;user"); Desc = 'Reset password on User objects in OU' }
+            @{ Args = @($TargetOU, '/G', "$($script:SvcFullName):CC;user");                    Desc = 'Create User objects in OU' }
+            @{ Args = @($TargetOU, '/G', "$($script:SvcFullName):RP;;user",  '/I:S');          Desc = 'Read user properties in OU' }
+            @{ Args = @($TargetOU, '/G', "$($script:SvcFullName):WP;;user",  '/I:S');          Desc = 'Write user properties in OU' }
+            @{ Args = @($TargetOU, '/G', "$($script:SvcFullName):CA;Reset Password;user", '/I:S'); Desc = 'Reset password on User objects in OU' }
         )
         foreach ($rule in $ouRules) {
             $out = & dsacls @($rule.Args) 2>&1

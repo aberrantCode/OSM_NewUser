@@ -191,14 +191,14 @@ $identity = "opbta\svc-osmweb"
 # Create User objects in the OU
 dsacls $ouDN /G "${identity}:CC;user"
 
-# Read all properties on User objects in the OU
-dsacls $ouDN /G "${identity}:RP;;user"
+# Read all properties on User objects in the OU (/I:S required when specifying an inherited object type)
+dsacls $ouDN /G "${identity}:RP;;user" /I:S
 
 # Write all properties on User objects in the OU
-dsacls $ouDN /G "${identity}:WP;;user"
+dsacls $ouDN /G "${identity}:WP;;user" /I:S
 
 # Reset password on User objects in the OU (required for New-ADUser)
-dsacls $ouDN /G "${identity}:CA;Reset Password;user"
+dsacls $ouDN /G "${identity}:CA;Reset Password;user" /I:S
 ```
 
 ### 4b. Grant "Write Members" on the target group
