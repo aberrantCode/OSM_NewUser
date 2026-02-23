@@ -361,26 +361,45 @@ try {
             }
             '2' {
                 Write-Warn 'Self-signed certificate is for TESTING only. Browsers will show a security warning.'
-                # Exportable so we can write it to a PFX file below.
-                $ssCert = New-SelfSignedCertificate `
-                    -DnsName           $env:COMPUTERNAME `
-                    -CertStoreLocation 'Cert:\LocalMachine\My' `
-                    -NotAfter          (Get-Date).AddYears(1) `
-                    -KeyAlgorithm      RSA `
-                    -KeyLength         2048 `
-                    -KeyExportPolicy   Exportable
-                # Generate a random PFX password (32 base-64 chars, no ambiguous chars)
+
+                # Reuse an existing valid self-signed cert for this host rather than
+                # creating a new one on every install run.
+                $existingSs = Get-ChildItem 'Cert:\LocalMachine\My' |
+                    Where-Object {
+                        $_.Subject    -eq "CN=$env:COMPUTERNAME" -and
+                        $_.Issuer     -eq "CN=$env:COMPUTERNAME" -and   # self-signed
+                        $_.NotAfter   -gt (Get-Date).AddDays(30) -and   # not expiring soon
+                        $_.HasPrivateKey
+                    } |
+                    Sort-Object NotAfter -Descending |
+                    Select-Object -First 1
+
+                if ($existingSs) {
+                    $ssCert = $existingSs
+                    Write-Ok "Reusing existing self-signed cert: $($ssCert.Thumbprint) (expires $($ssCert.NotAfter.ToString('yyyy-MM-dd')))"
+                } else {
+                    # Create a new one - Exportable so the installer can write a PFX backup.
+                    $ssCert = New-SelfSignedCertificate `
+                        -DnsName           $env:COMPUTERNAME `
+                        -CertStoreLocation 'Cert:\LocalMachine\My' `
+                        -NotAfter          (Get-Date).AddYears(1) `
+                        -KeyAlgorithm      RSA `
+                        -KeyLength         2048 `
+                        -KeyExportPolicy   Exportable
+                    Write-Ok "New self-signed certificate created: $($ssCert.Thumbprint)"
+                }
+
+                # Generate a random PFX password for the backup copy.
                 $pwBytes = New-Object byte[] 24
                 [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($pwBytes)
                 $CertPfxPassword = [Convert]::ToBase64String($pwBytes)
-                # Export to a temp file; the installer copies it to the install dir in Step 8
+
                 $script:CertThumbprint = $ssCert.Thumbprint
                 $CertPfxPath = Join-Path $env:TEMP "osmweb-cert-$($ssCert.Thumbprint).pfx"
                 $ssCert | Export-PfxCertificate `
                     -FilePath          $CertPfxPath `
                     -Password          (ConvertTo-SecureString $CertPfxPassword -AsPlainText -Force) `
                     -CryptoAlgorithmOption AES256_SHA256 | Out-Null
-                Write-Ok "Self-signed certificate created and exported to temp PFX. Thumbprint: $($ssCert.Thumbprint)"
             }
             default {
                 $SkipCertificate = $true
