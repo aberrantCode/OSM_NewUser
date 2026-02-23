@@ -254,7 +254,7 @@ Run this on your **build machine**, not the production server.
 ```powershell
 cd src/DotNetWebServer
 
-dotnet publish `
+dotnet publish OsmUserWeb.csproj `
     --configuration Release `
     --runtime       win-x64 `
     --self-contained false `
@@ -352,6 +352,8 @@ Create `C:\Services\OsmUserWeb\appsettings.Production.json` with non-secret over
 
 ### 8b. Protect the configuration files
 
+> **Prerequisite:** Complete step 8a first. `appsettings.Production.json` must exist before this script runs.
+
 ```powershell
 # Deny read access to Everyone except Administrators and SYSTEM
 $cfgFiles = @(
@@ -359,6 +361,10 @@ $cfgFiles = @(
     "C:\Services\OsmUserWeb\appsettings.Production.json"
 )
 foreach ($file in $cfgFiles) {
+    if (-not (Test-Path $file)) {
+        Write-Warning "Skipping '$file' — file does not exist. Complete step 8a first."
+        continue
+    }
     $acl = Get-Acl $file
     $acl.SetAccessRuleProtection($true, $false)
     foreach ($trustee in @("NT AUTHORITY\SYSTEM", "BUILTIN\Administrators")) {
@@ -648,7 +654,7 @@ Complete this checklist after deploying. Do not sign off until every item passes
 
 ```powershell
 # 1. Build and publish on the build machine
-dotnet publish `
+dotnet publish OsmUserWeb.csproj `
     --configuration Release `
     --runtime win-x64 `
     --self-contained false `
