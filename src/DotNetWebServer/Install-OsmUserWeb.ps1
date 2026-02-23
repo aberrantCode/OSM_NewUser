@@ -21,7 +21,7 @@
      13.  Start the service and verify it reaches the RUNNING state
 
     All actions are written to a timestamped transcript log in $env:TEMP.
-    The script is idempotent — safe to re-run after a partial failure.
+    The script is idempotent - safe to re-run after a partial failure.
 
 .PARAMETER PublishPath
     Path to the dotnet publish output folder (must contain OsmUserWeb.exe).
@@ -44,7 +44,7 @@
 .PARAMETER DefaultPassword
     Default password assigned to accounts created via the web UI.
     Prompted securely (with confirmation) if omitted.
-    Stored in the Windows registry as a service environment variable —
+    Stored in the Windows registry as a service environment variable -
     never written to disk in plain text.
 
 .PARAMETER CertThumbprint
@@ -73,7 +73,7 @@
     Stop and remove the Windows Service, application files, and firewall rules.
 
 .EXAMPLE
-    # Fully interactive — prompts for every missing value
+    # Fully interactive - prompts for every missing value
     .\Install-OsmUserWeb.ps1 -PublishPath .\publish
 
 .EXAMPLE
@@ -115,9 +115,9 @@ $Description = 'ASP.NET Core web UI for creating numbered Active Directory admin
 
 $LogTranscript = Join-Path $env:TEMP "Install-OsmUserWeb-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
 
-# ── Output helpers ─────────────────────────────────────────────────────────────
+# -- Output helpers -----------------------------------------------------------
 
-function Write-Step { param([string]$Msg) Write-Host "`n  $([char]0x25B6) $Msg" -ForegroundColor Cyan }
+function Write-Step { param([string]$Msg) Write-Host "`n  >> $Msg" -ForegroundColor Cyan }
 function Write-Ok   { param([string]$Msg) Write-Host "    [OK]   $Msg" -ForegroundColor Green }
 function Write-Warn { param([string]$Msg) Write-Host "    [WARN] $Msg" -ForegroundColor Yellow }
 function Write-Fail { param([string]$Msg) Write-Host "    [FAIL] $Msg" -ForegroundColor Red }
@@ -137,12 +137,12 @@ function Read-PasswordConfirmed {
                   [Runtime.InteropServices.Marshal]::SecureStringToBSTR($a))
         $pb = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
                   [Runtime.InteropServices.Marshal]::SecureStringToBSTR($b))
-        if ($pa -ne $pb) { Write-Warn 'Values do not match — try again.' }
+        if ($pa -ne $pb) { Write-Warn 'Values do not match - try again.' }
     } while ($pa -ne $pb)
     return $pa
 }
 
-# ── LSA "Log on as a service" via P/Invoke (no third-party modules needed) ────
+# -- LSA "Log on as a service" via P/Invoke (no third-party modules needed) ----
 
 function Grant-LogOnAsServiceRight {
     param([string]$AccountName)
@@ -204,7 +204,7 @@ namespace OsmInstall {
     [OsmInstall.LsaUtil]::GrantSeServiceLogonRight($AccountName)
 }
 
-# ── Certificate private-key ACL helper ────────────────────────────────────────
+# -- Certificate private-key ACL helper ----------------------------------------
 
 function Grant-CertPrivateKeyRead {
     param([string]$Thumbprint, [string]$Account)
@@ -237,11 +237,11 @@ function Grant-CertPrivateKeyRead {
         Write-Ok "$Account can read the certificate private key."
     } else {
         Write-Warn "Could not locate private key file for thumbprint $Thumbprint."
-        Write-Warn "Grant access manually: certlm.msc → Personal → right-click cert → All Tasks → Manage Private Keys"
+        Write-Warn "Grant access manually: certlm.msc -> Personal -> right-click cert -> All Tasks -> Manage Private Keys"
     }
 }
 
-# ── Helper: harden directory ACL ──────────────────────────────────────────────
+# -- Helper: harden directory ACL ----------------------------------------------
 
 function Set-HardenedAcl {
     param([string]$Path, [string]$Account, [string]$AccountRights, [string]$Inherit)
@@ -258,9 +258,9 @@ function Set-HardenedAcl {
     Set-Acl $Path $acl
 }
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # UNINSTALL
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 if ($Uninstall) {
     Write-Host "`nUninstalling $ServiceName..." -ForegroundColor Cyan
 
@@ -285,25 +285,25 @@ if ($Uninstall) {
     exit 0
 }
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # INSTALL
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 Start-Transcript -Path $LogTranscript -Force | Out-Null
 
-Write-Host "`n  ╔══════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "  ║       OsmUserWeb — Production Installer              ║" -ForegroundColor Cyan
-Write-Host "  ╚══════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host "`n  +======================================================+" -ForegroundColor Cyan
+Write-Host "  |       OsmUserWeb - Production Installer              |" -ForegroundColor Cyan
+Write-Host "  +======================================================+" -ForegroundColor Cyan
 Write-Host "  Log: $LogTranscript`n" -ForegroundColor DarkGray
 
 # Script-scoped variables populated during input collection
 $script:DomainFQDN   = $null
 $script:SvcFullName  = $null
-$script:SvcPassword  = $null   # plain text — used only in memory during install
+$script:SvcPassword  = $null   # plain text - used only in memory during install
 
 try {
 
-    # ── Step 0: Prerequisites ────────────────────────────────────────────────
-    Write-Step 'Step 0 · Checking prerequisites'
+    # -- Step 0: Prerequisites ------------------------------------------------
+    Write-Step 'Step 0 . Checking prerequisites'
 
     if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()
              ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -323,8 +323,8 @@ try {
         throw 'ActiveDirectory module not found. Install RSAT: Add-WindowsCapability -Online -Name Rsat.ActiveDirectory.DS-LDS.Tools~~~~0.0.1.0'
     }
 
-    # ── Step 1: Collect inputs ───────────────────────────────────────────────
-    Write-Step 'Step 1 · Collecting configuration inputs'
+    # -- Step 1: Collect inputs -----------------------------------------------
+    Write-Step 'Step 1 . Collecting configuration inputs'
 
     $script:DomainFQDN  = (Get-ADDomain).DNSRoot
     $script:SvcFullName = "$($script:DomainFQDN.Split('.')[0])\$SvcAccountName"
@@ -401,7 +401,7 @@ try {
     }
 
     Write-Host ''
-    Write-Host '  ── Configuration summary ─────────────────────────────────' -ForegroundColor DarkGray
+    Write-Host '  -- Configuration summary -----------------------------------' -ForegroundColor DarkGray
     Write-Host "  Install path   : $InstallPath"
     Write-Host "  Service account: $($script:SvcFullName)"
     Write-Host "  Target OU      : $TargetOU"
@@ -415,8 +415,8 @@ try {
         exit 0
     }
 
-    # ── Step 2: .NET 9 Hosting Bundle ───────────────────────────────────────
-    Write-Step 'Step 2 · .NET 9 ASP.NET Core Hosting Bundle'
+    # -- Step 2: .NET 9 Hosting Bundle ---------------------------------------
+    Write-Step 'Step 2 . .NET 9 ASP.NET Core Hosting Bundle'
 
     $runtime = dotnet --list-runtimes 2>$null | Where-Object { $_ -match '^Microsoft\.AspNetCore\.App 9\.' }
     if ($runtime) {
@@ -436,12 +436,12 @@ try {
         Write-Ok '.NET 9 Hosting Bundle installed.'
     }
 
-    # ── Step 3: Service account ──────────────────────────────────────────────
-    Write-Step 'Step 3 · Service account'
+    # -- Step 3: Service account ----------------------------------------------
+    Write-Step 'Step 3 . Service account'
 
     $existing = Get-ADUser -Filter "SamAccountName -eq '$SvcAccountName'" -ErrorAction SilentlyContinue
     if ($existing) {
-        Write-Ok "Account already exists: $($script:SvcFullName) — skipping creation."
+        Write-Ok "Account already exists: $($script:SvcFullName) - skipping creation."
     } else {
         $secPw = ConvertTo-SecureString $script:SvcPassword -AsPlainText -Force
         New-ADUser `
@@ -452,27 +452,27 @@ try {
             -Enabled              $true `
             -PasswordNeverExpires $true `
             -CannotChangePassword $true `
-            -Description          'OsmUserWeb service account — do not add to privileged groups'
+            -Description          'OsmUserWeb service account - do not add to privileged groups'
         Write-Ok "Service account created: $($script:SvcFullName)"
     }
 
-    # ── Step 4: Log on as a service ──────────────────────────────────────────
-    Write-Step 'Step 4 · Log on as a service right'
+    # -- Step 4: Log on as a service ------------------------------------------
+    Write-Step 'Step 4 . Log on as a service right'
 
     try {
         Grant-LogOnAsServiceRight $script:SvcFullName
         Write-Ok "SeServiceLogonRight granted to $($script:SvcFullName)."
     } catch {
         Write-Warn "Could not grant SeServiceLogonRight automatically: $_"
-        Write-Warn 'Grant manually: Local Security Policy → User Rights Assignment → Log on as a service'
+        Write-Warn 'Grant manually: Local Security Policy -> User Rights Assignment -> Log on as a service'
     }
 
-    # ── Step 5: AD delegation ────────────────────────────────────────────────
+    # -- Step 5: AD delegation ------------------------------------------------
     if ($SkipAdDelegation) {
-        Write-Step 'Step 5 · Skipping AD delegation (-SkipAdDelegation)'
+        Write-Step 'Step 5 . Skipping AD delegation (-SkipAdDelegation)'
         Write-Warn 'Ensure permissions are already in place. See INSTALL.md step 4.'
     } else {
-        Write-Step 'Step 5 · Delegating Active Directory permissions'
+        Write-Step 'Step 5 . Delegating Active Directory permissions'
 
         $ouRules = @(
             @{ Args = @($TargetOU, '/G', "$($script:SvcFullName):CC;user");  Desc = 'Create User objects in OU' }
@@ -482,7 +482,7 @@ try {
         foreach ($rule in $ouRules) {
             & dsacls @($rule.Args) | Out-Null
             if ($LASTEXITCODE -eq 0) { Write-Ok $rule.Desc }
-            else { Write-Warn "$($rule.Desc) — dsacls failed. Set manually per INSTALL.md step 4." }
+            else { Write-Warn "$($rule.Desc) - dsacls failed. Set manually per INSTALL.md step 4." }
         }
 
         try {
@@ -491,12 +491,12 @@ try {
             if ($LASTEXITCODE -eq 0) { Write-Ok "Write 'member' attribute on '$GroupName'" }
             else { Write-Warn "Group member delegation failed. Set manually per INSTALL.md step 4b." }
         } catch {
-            Write-Warn "Group '$GroupName' not found — skipping group delegation: $_"
+            Write-Warn "Group '$GroupName' not found - skipping group delegation: $_"
         }
     }
 
-    # ── Step 6: Deploy files ─────────────────────────────────────────────────
-    Write-Step 'Step 6 · Deploying application files'
+    # -- Step 6: Deploy files -------------------------------------------------
+    Write-Step 'Step 6 . Deploying application files'
 
     foreach ($dir in $InstallPath, (Join-Path $InstallPath 'logs')) {
         if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
@@ -515,8 +515,8 @@ try {
 
     Write-Ok 'Directory ACLs hardened (service account: read-execute on root, modify on logs only).'
 
-    # ── Step 7: Production config ────────────────────────────────────────────
-    Write-Step 'Step 7 · Writing appsettings.Production.json'
+    # -- Step 7: Production config --------------------------------------------
+    Write-Step 'Step 7 . Writing appsettings.Production.json'
 
     $configObj = [ordered]@{
         Logging    = [ordered]@{
@@ -570,22 +570,22 @@ try {
     }
     Write-Ok 'Config file ACLs restricted (Administrators + service account read-only).'
 
-    # ── Step 8: Certificate private key access ───────────────────────────────
+    # -- Step 8: Certificate private key access -------------------------------
     if (-not $SkipCertificate -and $CertThumbprint) {
-        Write-Step 'Step 8 · Granting certificate private key access'
+        Write-Step 'Step 8 . Granting certificate private key access'
         Grant-CertPrivateKeyRead -Thumbprint $CertThumbprint -Account $script:SvcFullName
     } else {
-        Write-Step 'Step 8 · Skipping certificate key access (no cert configured)'
+        Write-Step 'Step 8 . Skipping certificate key access (no cert configured)'
     }
 
-    # ── Step 9: Windows Service registration ─────────────────────────────────
-    Write-Step 'Step 9 · Registering Windows Service'
+    # -- Step 9: Windows Service registration ---------------------------------
+    Write-Step 'Step 9 . Registering Windows Service'
 
     $binPath = Join-Path $InstallPath 'OsmUserWeb.exe'
 
     $svcQuery = & sc.exe query $ServiceName 2>$null
     if ($svcQuery -match 'SERVICE_NAME') {
-        Write-Warn "Service '$ServiceName' already registered — reconfiguring."
+        Write-Warn "Service '$ServiceName' already registered - reconfiguring."
         & sc.exe stop $ServiceName 2>$null | Out-Null
         Start-Sleep -Seconds 3
         & sc.exe config $ServiceName `
@@ -606,8 +606,8 @@ try {
     & sc.exe description $ServiceName $Description | Out-Null
     Write-Ok "Service registered: $ServiceName"
 
-    # ── Step 10: Service environment variables (secrets) ─────────────────────
-    Write-Step 'Step 10 · Injecting secrets into service registry environment'
+    # -- Step 10: Service environment variables (secrets) ---------------------
+    Write-Step 'Step 10 . Injecting secrets into service registry environment'
 
     $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
     New-ItemProperty -Path $regPath -Name 'Environment' -PropertyType MultiString -Force `
@@ -617,22 +617,22 @@ try {
         ) | Out-Null
     Write-Ok 'Secrets written to HKLM service registry key (readable by Administrators and SYSTEM only).'
 
-    # ── Step 11: Failure recovery ─────────────────────────────────────────────
-    Write-Step 'Step 11 · Configuring failure recovery'
+    # -- Step 11: Failure recovery ---------------------------------------------
+    Write-Step 'Step 11 . Configuring failure recovery'
     & sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/10000/restart/30000 | Out-Null
-    Write-Ok 'Recovery policy: restart after 5 s → 10 s → 30 s; counter resets after 24 h.'
+    Write-Ok 'Recovery policy: restart after 5 s -> 10 s -> 30 s; counter resets after 24 h.'
 
-    # ── Step 12: Firewall rules ───────────────────────────────────────────────
+    # -- Step 12: Firewall rules -----------------------------------------------
     if ($SkipFirewall) {
-        Write-Step 'Step 12 · Skipping firewall (-SkipFirewall)'
+        Write-Step 'Step 12 . Skipping firewall (-SkipFirewall)'
     } else {
-        Write-Step 'Step 12 · Configuring Windows Firewall'
+        Write-Step 'Step 12 . Configuring Windows Firewall'
 
         Get-NetFirewallRule -DisplayName 'OsmUserWeb*' -ErrorAction SilentlyContinue |
             Remove-NetFirewallRule
 
         New-NetFirewallRule `
-            -DisplayName   "OsmUserWeb — allow HTTPS from $AdminSubnet" `
+            -DisplayName   "OsmUserWeb - allow HTTPS from $AdminSubnet" `
             -Direction     Inbound `
             -Protocol      TCP `
             -LocalPort     $HttpsPort `
@@ -640,17 +640,17 @@ try {
             -Action        Allow | Out-Null
 
         New-NetFirewallRule `
-            -DisplayName   'OsmUserWeb — block HTTPS from all others' `
+            -DisplayName   'OsmUserWeb - block HTTPS from all others' `
             -Direction     Inbound `
             -Protocol      TCP `
             -LocalPort     $HttpsPort `
             -Action        Block | Out-Null
 
-        Write-Ok "Inbound TCP $HttpsPort — allowed from $AdminSubnet, blocked from all others."
+        Write-Ok "Inbound TCP $HttpsPort - allowed from $AdminSubnet, blocked from all others."
     }
 
-    # ── Step 13: Start and verify ─────────────────────────────────────────────
-    Write-Step 'Step 13 · Starting service'
+    # -- Step 13: Start and verify ---------------------------------------------
+    Write-Step 'Step 13 . Starting service'
 
     & sc.exe start $ServiceName | Out-Null
 
@@ -669,7 +669,7 @@ try {
         Write-Warn "Check the event log: Get-EventLog -LogName Application -Source OsmUserWeb -Newest 10"
     }
 
-    # ── Summary ───────────────────────────────────────────────────────────────
+    # -- Summary ---------------------------------------------------------------
     $baseUrl = if ($SkipCertificate) {
         "http://localhost:5150"
     } elseif ($HttpsPort -eq 443) {
@@ -679,25 +679,25 @@ try {
     }
 
     Write-Host ''
-    Write-Host '  ╔══════════════════════════════════════════════════════╗' -ForegroundColor Green
-    Write-Host '  ║       Installation Complete                          ║' -ForegroundColor Green
-    Write-Host '  ╠══════════════════════════════════════════════════════╣' -ForegroundColor Green
-    Write-Host "  ║  Service      : $ServiceName"                           -ForegroundColor Green
-    Write-Host "  ║  Installed at : $InstallPath"                           -ForegroundColor Green
-    Write-Host "  ║  Running as   : $($script:SvcFullName)"                 -ForegroundColor Green
-    Write-Host "  ║  URL          : $baseUrl"                               -ForegroundColor Green
-    Write-Host "  ║  Target OU    : $TargetOU"                              -ForegroundColor Green
-    Write-Host "  ║  Group        : $GroupName"                             -ForegroundColor Green
+    Write-Host '  +======================================================+' -ForegroundColor Green
+    Write-Host '  |       Installation Complete                          |' -ForegroundColor Green
+    Write-Host '  +======================================================+' -ForegroundColor Green
+    Write-Host "  |  Service      : $ServiceName"                           -ForegroundColor Green
+    Write-Host "  |  Installed at : $InstallPath"                           -ForegroundColor Green
+    Write-Host "  |  Running as   : $($script:SvcFullName)"                 -ForegroundColor Green
+    Write-Host "  |  URL          : $baseUrl"                               -ForegroundColor Green
+    Write-Host "  |  Target OU    : $TargetOU"                              -ForegroundColor Green
+    Write-Host "  |  Group        : $GroupName"                             -ForegroundColor Green
     if ($CertThumbprint) {
-    Write-Host "  ║  Certificate  : $CertThumbprint"                        -ForegroundColor Green
+    Write-Host "  |  Certificate  : $CertThumbprint"                        -ForegroundColor Green
     }
-    Write-Host '  ╠══════════════════════════════════════════════════════╣' -ForegroundColor Green
-    Write-Host '  ║  Next steps:                                         ║' -ForegroundColor Green
-    Write-Host '  ║   1. Open the URL from an admin workstation          ║' -ForegroundColor Green
-    Write-Host '  ║   2. Work through the verification checklist         ║' -ForegroundColor Green
-    Write-Host '  ║      in INSTALL.md step 13                           ║' -ForegroundColor Green
-    Write-Host '  ║   3. Verify perimeter firewall rules independently   ║' -ForegroundColor Green
-    Write-Host '  ╚══════════════════════════════════════════════════════╝' -ForegroundColor Green
+    Write-Host '  +------------------------------------------------------+' -ForegroundColor Green
+    Write-Host '  |  Next steps:                                         |' -ForegroundColor Green
+    Write-Host '  |   1. Open the URL from an admin workstation          |' -ForegroundColor Green
+    Write-Host '  |   2. Work through the verification checklist         |' -ForegroundColor Green
+    Write-Host '  |      in INSTALL.md step 13                           |' -ForegroundColor Green
+    Write-Host '  |   3. Verify perimeter firewall rules independently   |' -ForegroundColor Green
+    Write-Host '  +======================================================+' -ForegroundColor Green
     Write-Host ''
     Write-Host "  Full install log: $LogTranscript" -ForegroundColor DarkGray
 
