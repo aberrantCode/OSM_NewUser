@@ -501,6 +501,8 @@ Import-Certificate `
 
 ### 9b. Grant the service account access to the certificate's private key
 
+Kestrel loads the certificate at startup with `.Where(c => c.HasPrivateKey)`. If `svc-osmweb` cannot read the private key, `HasPrivateKey` returns `false`, the certificate is silently skipped, and the service fails to start with "No server certificate was specified."
+
 ```powershell
 $thumb   = "PASTE_YOUR_THUMBPRINT_HERE"
 $cert    = Get-Item "Cert:\LocalMachine\My\$thumb"
@@ -518,7 +520,15 @@ Set-Acl $keyPath $acl
 
 ### 9c. Add the Kestrel HTTPS endpoint to appsettings.Production.json
 
-Merge the `Kestrel` block into `C:\Services\OsmUserWeb\appsettings.Production.json`:
+Merge the `Kestrel` block into `C:\Services\OsmUserWeb\appsettings.Production.json`.
+
+> **Important:** Use `Subject` (the certificate's full Distinguished Name), **not** `Thumbprint`. Kestrel's `CertificateConfig` does not have a `Thumbprint` property — an unrecognised key is silently ignored, leaving the cert config empty and causing the "No server certificate was specified" error.
+>
+> Get the Subject DN with:
+> ```powershell
+> (Get-Item "Cert:\LocalMachine\My\PASTE_YOUR_THUMBPRINT_HERE").Subject
+> # Example output: CN=AC-WINADMIN
+> ```
 
 ```json
 {
@@ -530,10 +540,10 @@ Merge the `Kestrel` block into `C:\Services\OsmUserWeb\appsettings.Production.js
       "Https": {
         "Url": "https://*:443",
         "Certificate": {
-          "Thumbprint":    "PASTE_YOUR_THUMBPRINT_HERE",
-          "Store":         "My",
-          "Location":      "LocalMachine",
-          "AllowInvalid":  false
+          "Subject":      "CN=your-server-hostname",
+          "Store":        "My",
+          "Location":     "LocalMachine",
+          "AllowInvalid": false
         }
       }
     }
@@ -798,7 +808,7 @@ When the TLS certificate is renewed:
 
 1. Import the new certificate into `Cert:\LocalMachine\My`
 2. Grant `svc-osmweb` read access to its private key (step 9b)
-3. Update the `Thumbprint` value in `appsettings.Production.json`
+3. Update the `Subject` value in `appsettings.Production.json` to the new certificate's Subject DN
 4. Restart the service:
 
 ```powershell
