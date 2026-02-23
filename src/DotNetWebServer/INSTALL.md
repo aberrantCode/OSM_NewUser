@@ -392,21 +392,112 @@ Transmitting AD passwords over plain HTTP is unacceptable. HTTPS is mandatory fo
 | **win-acme (Let's Encrypt)** | Internet-accessible server with a publicly resolvable DNS name |
 | **Self-signed (testing only)** | Browsers will show a security warning; never use in production |
 
-Import the certificate into the **LocalMachine → Personal (My)** store:
+Follow the section that matches your environment. All three methods end with the certificate in the **LocalMachine → Personal (My)** store and a thumbprint you will paste into later steps.
+
+---
+
+#### Method 1: Internal CA (recommended)
+
+**Option A — Request directly from PowerShell (enterprise CA)**
+
+Run this on the application server. The server must be able to reach an enterprise CA (i.e. domain-joined with Certificate Services deployed).
 
 ```powershell
-# If importing from a PFX file:
+$hostname = $env:COMPUTERNAME          # or use the server's FQDN, e.g. "osmweb.yourdomain.com"
+
+$cert = Get-Certificate `
+    -Template        "WebServer" `
+    -SubjectName     "CN=$hostname" `
+    -DnsName         $hostname `
+    -CertStoreLocation "Cert:\LocalMachine\My"
+
+$cert.Certificate | Select-Object Subject, Thumbprint, NotAfter
+```
+
+> If the `WebServer` template is not available in your environment, ask your PKI administrator for the correct template name (`certutil -catemplates` lists available templates).
+
+**Option B — Import a PFX delivered by your PKI team**
+
+```powershell
 $pfxPassword = Read-Host -AsSecureString "PFX password"
 Import-PfxCertificate `
-    -FilePath        "C:\Temp\osmweb.pfx" `
+    -FilePath          "C:\Temp\osmweb.pfx" `
     -CertStoreLocation "Cert:\LocalMachine\My" `
-    -Password        $pfxPassword
+    -Password          $pfxPassword
 
-# Note the thumbprint:
+# Note the thumbprint — you will need it in steps 9b and 9c
 Get-ChildItem Cert:\LocalMachine\My |
     Where-Object { $_.Subject -match "osmweb" } |
     Select-Object Subject, Thumbprint, NotAfter
 ```
+
+---
+
+#### Method 2: win-acme (Let's Encrypt)
+
+Use this only if the server has a **publicly resolvable DNS name** and **inbound port 80** is reachable from the internet for the ACME HTTP-01 challenge.
+
+1. Download the latest win-acme release from [https://www.win-acme.com](https://www.win-acme.com) and extract it to `C:\Tools\win-acme`.
+
+2. Run win-acme from an elevated PowerShell session:
+
+```powershell
+Set-Location "C:\Tools\win-acme"
+.\wacs.exe
+```
+
+3. Follow the interactive prompts:
+   - Choose **N** — Create certificate (default settings)
+   - Select **1** — Single binding of an IIS site, **or** choose the manual option and enter the hostname
+   - When asked for the store, choose **Certificate Store (Local Machine)**
+   - Accept the Let's Encrypt subscriber agreement
+
+4. win-acme installs the certificate into `Cert:\LocalMachine\My` and schedules automatic renewal via a Windows Scheduled Task.
+
+5. Note the thumbprint:
+
+```powershell
+Get-ChildItem Cert:\LocalMachine\My |
+    Sort-Object NotAfter -Descending |
+    Select-Object -First 1 Subject, Thumbprint, NotAfter
+```
+
+> Because win-acme renews certificates automatically (every ~60 days), you must also update the `Thumbprint` in `appsettings.Production.json` and restart the service on each renewal, unless you configure a win-acme renewal script to do this automatically.
+
+---
+
+#### Method 3: Self-signed (testing only)
+
+> **Warning:** Browsers will display a security warning. Do not use this in production.
+
+```powershell
+$hostname = $env:COMPUTERNAME   # or the server's FQDN
+
+$cert = New-SelfSignedCertificate `
+    -DnsName           $hostname `
+    -CertStoreLocation "Cert:\LocalMachine\My" `
+    -NotAfter          (Get-Date).AddYears(1) `
+    -KeyUsage          DigitalSignature, KeyEncipherment `
+    -TextExtension     @("2.5.29.37={text}1.3.6.1.5.5.7.3.1")   # Server Authentication EKU
+
+$cert | Select-Object Subject, Thumbprint, NotAfter
+```
+
+To suppress the browser warning on admin workstations, export the certificate and import it into each workstation's **Trusted Root Certification Authorities** store:
+
+```powershell
+# Export the public certificate (no private key)
+Export-Certificate `
+    -Cert  "Cert:\LocalMachine\My\$($cert.Thumbprint)" `
+    -FilePath "C:\Temp\osmweb-selfsigned.cer"
+
+# On each admin workstation (elevated):
+Import-Certificate `
+    -FilePath          "C:\Temp\osmweb-selfsigned.cer" `
+    -CertStoreLocation "Cert:\LocalMachine\Root"
+```
+
+---
 
 ### 9b. Grant the service account access to the certificate's private key
 
