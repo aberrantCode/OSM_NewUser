@@ -254,6 +254,14 @@ if ($Uninstall) {
         Remove-NetFirewallRule
     Write-Ok "Firewall rules removed."
 
+    # Remove HTTP.sys registrations (try common ports; adjust if non-default was used)
+    foreach ($port in @($HttpsPort, 443, 8443)) {
+        & netsh http delete urlacl "url=https://+:$port/" 2>$null | Out-Null
+        & netsh http delete sslcert "ipport=0.0.0.0:$port" 2>$null | Out-Null
+        & netsh http delete sslcert "ipport=[::]:$port" 2>$null | Out-Null
+    }
+    Write-Ok "HTTP.sys URL ACL and sslcert bindings removed."
+
     Write-Host "`nUninstall complete." -ForegroundColor Green
     exit 0
 }
@@ -269,10 +277,11 @@ Write-Host "  +======================================================+" -Foregro
 Write-Host "  Log: $LogTranscript`n" -ForegroundColor DarkGray
 
 # Script-scoped variables populated during input collection
-$script:DomainFQDN   = $null
-$script:SvcFullName  = $null
-$script:SvcPassword  = $null   # plain text - used only in memory during install
-$script:PfxPassword  = $null   # plain text - injected into registry env, never written to disk
+$script:DomainFQDN       = $null
+$script:SvcFullName      = $null
+$script:SvcPassword      = $null   # plain text - used only in memory during install
+$script:PfxPassword      = $null   # plain text - used only during PFX import
+$script:CertThumbprint   = $null   # set after cert creation or PFX import
 
 try {
 
@@ -365,6 +374,7 @@ try {
                 [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($pwBytes)
                 $CertPfxPassword = [Convert]::ToBase64String($pwBytes)
                 # Export to a temp file; the installer copies it to the install dir in Step 8
+                $script:CertThumbprint = $ssCert.Thumbprint
                 $CertPfxPath = Join-Path $env:TEMP "osmweb-cert-$($ssCert.Thumbprint).pfx"
                 $ssCert | Export-PfxCertificate `
                     -FilePath          $CertPfxPath `
@@ -528,24 +538,10 @@ try {
         AdSettings = [ordered]@{ TargetOU = $TargetOU; GroupName = $GroupName }
     }
 
-    if (-not $SkipCertificate -and $CertPfxPath) {
-        # Program.cs loads the PFX with X509KeyStorageFlags.EphemeralKeySet so the
-        # private key is kept in memory only - no user-profile / key-store write
-        # required.  Kestrel only needs the HTTPS endpoint URL; the certificate
-        # itself is wired up via ConfigureHttpsDefaults before the host is built.
-        $pfxInstallPath = Join-Path $InstallPath "certs\osmweb.pfx"
-        $configObj['Kestrel'] = [ordered]@{
-            Endpoints = [ordered]@{
-                HttpLocalOnly = [ordered]@{ Url = 'http://localhost:5150' }
-                Https         = [ordered]@{ Url = "https://*:$HttpsPort" }
-            }
-        }
-        $configObj['TlsCertificate'] = [ordered]@{
-            Path = $pfxInstallPath
-        }
-        # The PFX password is injected as a service registry environment variable
-        # in Step 10 (TlsCertificate__Password) - not written to the JSON file.
-    }
+    # HTTP.sys handles TLS at the kernel level; ASP.NET Core only needs to know
+    # which URLs to listen on, and that is supplied via ASPNETCORE_URLS in the
+    # service registry environment (Step 10) rather than in the JSON config file.
+    # No Kestrel or TlsCertificate sections are needed here.
 
     $configPath = Join-Path $InstallPath 'appsettings.Production.json'
     $configObj | ConvertTo-Json -Depth 10 | Set-Content -Path $configPath -Encoding UTF8
@@ -566,36 +562,72 @@ try {
     }
     Write-Ok 'Config file ACLs restricted (Administrators + service account read-only).'
 
-    # -- Step 8: Deploy and secure the PFX file --------------------------------
+    # -- Step 8: HTTP.sys TLS registration -------------------------------------
     if (-not $SkipCertificate -and $CertPfxPath) {
-        Write-Step 'Step 8 . Deploying PFX certificate'
+        Write-Step 'Step 8 . Registering certificate with HTTP.sys'
 
+        # For existing PFX (choice [1]): import to LocalMachine\My and get thumbprint.
+        # For self-signed (choice [2]): cert is already in LocalMachine\My; thumbprint
+        # was captured at creation time in $script:CertThumbprint.
+        if (-not $script:CertThumbprint) {
+            Write-Host '    Importing PFX to Cert:\LocalMachine\My...'
+            $secPfxPw = ConvertTo-SecureString $script:PfxPassword -AsPlainText -Force
+            $importedCert = Import-PfxCertificate `
+                -FilePath          $CertPfxPath `
+                -CertStoreLocation 'Cert:\LocalMachine\My' `
+                -Password          $secPfxPw
+            $script:CertThumbprint = $importedCert.Thumbprint
+            Write-Ok "Certificate imported. Thumbprint: $($script:CertThumbprint)"
+        } else {
+            Write-Ok "Using pre-imported certificate. Thumbprint: $($script:CertThumbprint)"
+        }
+
+        # Keep a copy of the PFX in the install dir for reference / renewal.
         $certsDir       = Join-Path $InstallPath 'certs'
         $pfxInstallPath = Join-Path $certsDir 'osmweb.pfx'
-
         if (-not (Test-Path $certsDir)) { New-Item -ItemType Directory -Path $certsDir | Out-Null }
-
         Copy-Item -Path $CertPfxPath -Destination $pfxInstallPath -Force
-
-        # Restrict to SYSTEM, Administrators (full) and the service account (read).
         $pfxAcl = Get-Acl $pfxInstallPath
         $pfxAcl.SetAccessRuleProtection($true, $false)
         foreach ($t in 'NT AUTHORITY\SYSTEM', 'BUILTIN\Administrators') {
             $pfxAcl.AddAccessRule(
                 [System.Security.AccessControl.FileSystemAccessRule]::new($t, 'FullControl', 'Allow'))
         }
-        $pfxAcl.AddAccessRule(
-            [System.Security.AccessControl.FileSystemAccessRule]::new($script:SvcFullName, 'Read', 'Allow'))
         Set-Acl $pfxInstallPath $pfxAcl
-
-        Write-Ok "PFX deployed to $pfxInstallPath (service account: read-only)."
+        Write-Ok "PFX backed up to $pfxInstallPath (Administrators only)."
 
         # Remove temp export if it was created by the self-signed path
         if ($CertPfxPath -like "$env:TEMP\osmweb-cert-*") {
             Remove-Item $CertPfxPath -Force -ErrorAction SilentlyContinue
         }
+
+        # HTTP.sys URL reservation - allows svc-osmweb to accept connections on
+        # the HTTPS port without running as Administrator.
+        & netsh http delete urlacl url="https://+:$HttpsPort/" 2>$null | Out-Null
+        $urlOut = & netsh http add urlacl url="https://+:$HttpsPort/" user="$($script:SvcFullName)" 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Ok "HTTP.sys URL ACL registered for https://+:$HttpsPort/"
+        } else {
+            Write-Warn "netsh urlacl failed (exit $LASTEXITCODE): $urlOut"
+        }
+
+        # HTTP.sys SSL cert binding - associates the certificate with the port.
+        # HTTP.sys (SYSTEM, kernel mode) reads the cert from the machine store;
+        # svc-osmweb never touches the private key.
+        $appId = "{$([System.Guid]::NewGuid().ToString())}"
+        foreach ($ip in @('0.0.0.0', '[::]')) {
+            & netsh http delete sslcert "ipport=$ip`:$HttpsPort" 2>$null | Out-Null
+            $sslOut = & netsh http add sslcert "ipport=$ip`:$HttpsPort" `
+                          "certhash=$($script:CertThumbprint)" `
+                          "appid=$appId" 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Ok "HTTP.sys sslcert binding registered for $ip`:$HttpsPort"
+            } else {
+                Write-Warn "netsh sslcert $ip failed (exit $LASTEXITCODE): $sslOut"
+            }
+        }
     } else {
-        Write-Step 'Step 8 . Skipping PFX deployment (no cert configured)'
+        Write-Step 'Step 8 . Skipping HTTP.sys TLS registration (no cert configured)'
     }
 
     # -- Step 9: Windows Service registration ---------------------------------
@@ -630,16 +662,22 @@ try {
     Write-Step 'Step 10 . Injecting secrets into service registry environment'
 
     $regPath  = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
-    $regEnv   = [System.Collections.Generic.List[string]]@(
-        'ASPNETCORE_ENVIRONMENT=Production',
-        "AdSettings__DefaultPassword=$DefaultPassword"
-    )
-    if ($script:PfxPassword) {
-        $regEnv.Add("TlsCertificate__Password=$($script:PfxPassword)")
+
+    # ASPNETCORE_URLS configures the HTTP.sys URL prefixes.
+    # HTTP endpoint is always present; HTTPS endpoint is added when a cert is configured.
+    $urls = "http://localhost:5150"
+    if (-not $SkipCertificate -and $script:CertThumbprint) {
+        $urls += ";https://+:$HttpsPort"
     }
+
     New-ItemProperty -Path $regPath -Name 'Environment' -PropertyType MultiString -Force `
-        -Value $regEnv.ToArray() | Out-Null
-    Write-Ok 'Secrets written to HKLM service registry key (readable by Administrators and SYSTEM only).'
+        -Value @(
+            'ASPNETCORE_ENVIRONMENT=Production',
+            "AdSettings__DefaultPassword=$DefaultPassword",
+            "ASPNETCORE_URLS=$urls"
+        ) | Out-Null
+    Write-Ok "Secrets and URL config written to HKLM service registry key."
+    Write-Ok "ASPNETCORE_URLS=$urls"
 
     # -- Step 11: Failure recovery ---------------------------------------------
     Write-Step 'Step 11 . Configuring failure recovery'

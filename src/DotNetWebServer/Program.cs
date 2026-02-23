@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Cryptography.X509Certificates;
+using Microsoft.AspNetCore.Server.HttpSys;
 using OsmUserWeb.Models;
 using OsmUserWeb.Services;
 
@@ -9,24 +9,22 @@ var builder = WebApplication.CreateBuilder(args);
 // Has no effect when running interactively (dotnet run / Start-OsmUserWeb.ps1).
 builder.Host.UseWindowsService(options => options.ServiceName = "OsmUserWeb");
 
+// Use the Windows HTTP.sys kernel driver for all HTTP/HTTPS traffic.
+// HTTP.sys handles TLS termination in kernel mode (as SYSTEM), so the service
+// account (svc-osmweb) never needs access to the certificate private key.
+// Non-admin port binding requires two one-time netsh registrations performed by
+// Install-OsmUserWeb.ps1:
+//   netsh http add urlacl url=https://+:<port>/ user=DOMAIN\svc-osmweb
+//   netsh http add sslcert ipport=0.0.0.0:<port> certhash=<thumbprint> appid={guid}
+// URL prefixes come from the ASPNETCORE_URLS service registry environment variable.
+builder.WebHost.UseHttpSys(options =>
+{
+    options.Authentication.Schemes = AuthenticationSchemes.None;
+    options.Authentication.AllowAnonymous = true;
+});
+
 builder.Services.Configure<AdSettings>(builder.Configuration.GetSection("AdSettings"));
 builder.Services.AddScoped<AdUserService>();
-
-// Load TLS certificate from PFX file using EphemeralKeySet so the private key is kept
-// in memory only.  This avoids the "Access denied" failure that occurs when the service
-// account (e.g. svc-osmweb) has no loaded user profile and .NET tries to persist the
-// key to the per-user key store.  Falls back to the standard Kestrel configuration
-// (appsettings Kestrel:Endpoints) when TlsCertificate:Path is absent or the file does
-// not exist.
-var pfxPath     = builder.Configuration["TlsCertificate:Path"];
-var pfxPassword = builder.Configuration["TlsCertificate:Password"];
-if (!string.IsNullOrEmpty(pfxPath) && File.Exists(pfxPath))
-{
-    var cert = X509CertificateLoader.LoadPkcs12FromFile(pfxPath, pfxPassword,
-        X509KeyStorageFlags.EphemeralKeySet);
-    builder.WebHost.ConfigureKestrel(k =>
-        k.ConfigureHttpsDefaults(h => h.ServerCertificate = cert));
-}
 
 var app = builder.Build();
 
