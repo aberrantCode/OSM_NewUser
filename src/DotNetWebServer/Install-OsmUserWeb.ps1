@@ -61,7 +61,10 @@
     Prompted interactively if omitted (unless -SkipFirewall is set).
 
 .PARAMETER HttpsPort
-    HTTPS listener port. Default: 443
+    HTTPS listener port. Default: 8443
+    Port 443 requires Administrator or HTTP.sys rights; svc-osmweb cannot bind
+    to a raw socket below 1024.  Use 8443 (or any port >= 1024) and rely on
+    the Windows Firewall rule to restrict access to the admin subnet.
 
 .PARAMETER SkipAdDelegation
     Skip the dsacls delegation steps when permissions are already configured.
@@ -105,7 +108,7 @@ param(
     [string]$CertPfxPath,
     [string]$CertPfxPassword,
     [string]$AdminSubnet,
-    [int]   $HttpsPort       = 443,
+    [int]   $HttpsPort       = 8443,
     [switch]$SkipAdDelegation,
     [switch]$SkipCertificate,
     [switch]$SkipFirewall,
