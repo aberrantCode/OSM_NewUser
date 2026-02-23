@@ -48,6 +48,18 @@ The automated installer script performs every step in INSTALL.md from a single e
 
 See [`Install-OsmUserWeb.ps1`](Install-OsmUserWeb.ps1) for the full parameter reference.
 
+To completely remove OsmUserWeb — Windows Service, HTTP.sys registrations, firewall rules, and application files — run the uninstall script:
+
+```powershell
+# Full removal (as Administrator)
+.\Uninstall-OsmUserWeb.ps1
+
+# Also remove the service account from AD and the TLS certificate
+.\Uninstall-OsmUserWeb.ps1 -RemoveServiceAccount -RemoveCertificate
+```
+
+See [`Uninstall-OsmUserWeb.ps1`](Uninstall-OsmUserWeb.ps1) for the full parameter reference.
+
 ## Build and Run
 
 ```powershell

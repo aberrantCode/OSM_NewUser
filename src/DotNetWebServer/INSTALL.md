@@ -3,6 +3,8 @@
 This guide walks through deploying OsmUserWeb as a hardened Windows Service. It follows a defence-in-depth approach: dedicated low-privilege service account, delegated-only AD permissions, TLS, and network-layer access control.
 
 > **Automated installer available** — [`Install-OsmUserWeb.ps1`](Install-OsmUserWeb.ps1) automates every step in this document. Run it from an elevated PowerShell session on the target server. Refer to this guide for background, manual steps, and troubleshooting.
+>
+> **To uninstall** — [`Uninstall-OsmUserWeb.ps1`](Uninstall-OsmUserWeb.ps1) stops and removes the service, HTTP.sys registrations, firewall rules, and application files. Pass `-RemoveServiceAccount` and/or `-RemoveCertificate` to also clean up the AD account and TLS certificate.
 
 ---
 
@@ -29,15 +31,15 @@ This guide walks through deploying OsmUserWeb as a hardened Windows Service. It 
 
 ```
 [Admin workstation]
-        │  HTTPS 443
+        │  HTTPS 8443
         ▼
 [OsmUserWeb server]  ──LDAP──→  [Domain Controller]
-  Windows Service
+  Windows Service (HTTP.sys)
   svc-osmweb account
   C:\Services\OsmUserWeb
 ```
 
-The web server sits on your admin network segment. Only authorised admin workstations can reach it. It authenticates to Active Directory using a delegated service account that has the minimum permissions needed to create users in the target OU and add them to the target group — and nothing else.
+The web server sits on your admin network segment. Only authorised admin workstations can reach it. TLS is handled by **HTTP.sys** (the Windows kernel HTTP driver, running as SYSTEM) — the `svc-osmweb` service account never touches the certificate private key. The service account authenticates to Active Directory using delegated permissions limited to creating users in the target OU and adding them to the target group.
 
 ---
 
@@ -46,9 +48,9 @@ The web server sits on your admin network segment. Only authorised admin worksta
 | Requirement | Minimum | Notes |
 |---|---|---|
 | OS | Windows Server 2019 or 2022 | Must be domain-joined |
-| RAM | 512 MB available | Kestrel + AD queries are lightweight |
+| RAM | 512 MB available | HTTP.sys + AD queries are lightweight |
 | Disk | 500 MB | Application, logs, and .NET runtime |
-| Network | Reachable on port 443 from admin workstations | Firewall rule added in step 11 |
+| Network | Reachable on port 8443 from admin workstations | Firewall rule added in step 11 |
 | .NET 9 Hosting Bundle | See step 5 | Do **not** install the full SDK on production servers |
 
 > **Do not** deploy on a Domain Controller. Run the service on a separate member server.
@@ -462,7 +464,7 @@ Get-ChildItem Cert:\LocalMachine\My |
     Select-Object -First 1 Subject, Thumbprint, NotAfter
 ```
 
-> Because win-acme renews certificates automatically (every ~60 days), you must also update the `Thumbprint` in `appsettings.Production.json` and restart the service on each renewal, unless you configure a win-acme renewal script to do this automatically.
+> Because win-acme renews certificates automatically (every ~60 days), you must re-register the new thumbprint with HTTP.sys on each renewal (see the **Certificate renewal** section in step 14). Configure a win-acme renewal script to run those `netsh` commands automatically so the service is never interrupted.
 
 ---
 
@@ -499,63 +501,35 @@ Import-Certificate `
 
 ---
 
-### 9b. Grant the service account access to the certificate's private key
+### 9b. Register the certificate with HTTP.sys
 
-Kestrel loads the certificate at startup with `.Where(c => c.HasPrivateKey)`. If `svc-osmweb` cannot read the private key, `HasPrivateKey` returns `false`, the certificate is silently skipped, and the service fails to start with "No server certificate was specified."
+HTTP.sys handles TLS termination in kernel mode (running as SYSTEM). The `svc-osmweb` service account never needs access to the certificate private key. You register the certificate and grant `svc-osmweb` permission to accept connections via two `netsh` commands.
 
 ```powershell
-$thumb   = "PASTE_YOUR_THUMBPRINT_HERE"
-$cert    = Get-Item "Cert:\LocalMachine\My\$thumb"
-$account = "opbta\svc-osmweb"
+$thumb     = "PASTE_YOUR_THUMBPRINT_HERE"   # from step 9a
+$httpsPort = 8443
+$svcAcct   = "opbta\svc-osmweb"
+$appId     = "{$([System.Guid]::NewGuid().ToString())}"
 
-# Locate the private key file on disk
-$keyName = $cert.PrivateKey.CspKeyContainerInfo.UniqueKeyContainerName
-$keyPath = Join-Path "$env:ProgramData\Microsoft\Crypto\RSA\MachineKeys" $keyName
+# Grant svc-osmweb permission to accept connections on the HTTPS port
+netsh http add urlacl "url=https://+:$httpsPort/" "user=$svcAcct"
 
-$acl = Get-Acl $keyPath
-$acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
-    $account, "Read", "Allow")))
-Set-Acl $keyPath $acl
-```
-
-### 9c. Add the Kestrel HTTPS endpoint to appsettings.Production.json
-
-Merge the `Kestrel` block into `C:\Services\OsmUserWeb\appsettings.Production.json`.
-
-> **Important:** Use `Subject` (the certificate's full Distinguished Name), **not** `Thumbprint`. Kestrel's `CertificateConfig` does not have a `Thumbprint` property — an unrecognised key is silently ignored, leaving the cert config empty and causing the "No server certificate was specified" error.
->
-> Get the Subject DN with:
-> ```powershell
-> (Get-Item "Cert:\LocalMachine\My\PASTE_YOUR_THUMBPRINT_HERE").Subject
-> # Example output: CN=AC-WINADMIN
-> ```
-
-```json
-{
-  "Kestrel": {
-    "Endpoints": {
-      "HttpLocalOnly": {
-        "Url": "http://localhost:5150"
-      },
-      "Https": {
-        "Url": "https://*:443",
-        "Certificate": {
-          "Subject":      "CN=your-server-hostname",
-          "Store":        "My",
-          "Location":     "LocalMachine",
-          "AllowInvalid": false
-        }
-      }
-    }
-  },
-  "Logging": { ... },
-  "AdSettings": { ... }
+# Register the certificate with HTTP.sys for TLS (IPv4 and IPv6)
+foreach ($ip in @('0.0.0.0', '[::]')) {
+    netsh http add sslcert "ipport=${ip}:$httpsPort" `
+        "certhash=$thumb" "appid=$appId"
 }
 ```
 
-> **Self-signed certificates:** Set `"AllowInvalid": true`. When the service runs as a low-privilege account (`svc-osmweb`), Windows chain validation can fail for self-signed certificates due to revocation check timeouts, even when the certificate is present in `LocalMachine\Root`. `AllowInvalid: true` skips chain validation while leaving the TLS handshake fully intact — the certificate is still used and the connection is still encrypted.
+Verify the registrations:
 
-The `HttpLocalOnly` binding allows health checks and monitoring agents on the same server without going through TLS.
+```powershell
+netsh http show urlacl  "url=https://+:$httpsPort/"
+netsh http show sslcert "ipport=0.0.0.0:$httpsPort"
+netsh http show sslcert "ipport=[::]:$httpsPort"
+```
+
+> **No private-key ACL required.** HTTP.sys reads the certificate as SYSTEM. Unlike the Kestrel approach, `svc-osmweb` does not need `Read` access to the private key file in `%ProgramData%\Microsoft\Crypto\RSA\MachineKeys`.
 
 ---
 
@@ -594,16 +568,21 @@ This restarts the service after 5 s on the first failure, 10 s on the second, 30
 Service environment variables are stored in the Windows registry as a `REG_MULTI_SZ` value under the service key. They are readable only by Administrators and SYSTEM — never exposed to normal users or the application filesystem.
 
 ```powershell
+$httpsPort = 8443   # must match step 9b
+
 New-ItemProperty `
     -Path         "HKLM:\SYSTEM\CurrentControlSet\Services\OsmUserWeb" `
     -Name         "Environment" `
     -PropertyType MultiString `
     -Value        @(
         "ASPNETCORE_ENVIRONMENT=Production",
-        "AdSettings__DefaultPassword=YourActualP@ssw0rd"
+        "AdSettings__DefaultPassword=YourActualP@ssw0rd",
+        "ASPNETCORE_URLS=http://localhost:5150;https://+:$httpsPort"
     ) `
     -Force
 ```
+
+`ASPNETCORE_URLS` is required because HTTP.sys ignores `Kestrel:Endpoints` in `appsettings.json`. The `http://localhost:5150` binding allows health checks on the loopback interface without going through TLS.
 
 > For higher security, consider fetching the password at startup from **Windows Credential Manager** (`cmdkey`) or **Azure Key Vault** via a Managed Identity and injecting it through a custom `IConfigurationProvider`, so the plaintext password never touches the registry.
 
@@ -638,22 +617,23 @@ Because this tool creates privileged AD accounts, access must be limited to auth
 
 ```powershell
 $adminSubnet = "10.0.1.0/24"   # Replace with your admin VLAN/subnet
+$httpsPort   = 8443
 
 # Allow HTTPS from admin workstations
 New-NetFirewallRule `
     -DisplayName   "OsmUserWeb — allow HTTPS from admin subnet" `
     -Direction     Inbound `
     -Protocol      TCP `
-    -LocalPort     443 `
+    -LocalPort     $httpsPort `
     -RemoteAddress $adminSubnet `
     -Action        Allow
 
-# Block all other inbound traffic on port 443
+# Block all other inbound traffic on the HTTPS port
 New-NetFirewallRule `
     -DisplayName   "OsmUserWeb — block HTTPS from all others" `
     -Direction     Inbound `
     -Protocol      TCP `
-    -LocalPort     443 `
+    -LocalPort     $httpsPort `
     -Action        Block
 ```
 
@@ -681,7 +661,7 @@ Internet / corporate LAN
 
 ## 12. Optional: IIS as a Reverse Proxy
 
-If your organisation's policy requires IIS as the public-facing listener (centralised certificate management, HTTP/2, or WAF integration), configure IIS to reverse-proxy to the Kestrel process.
+OsmUserWeb uses HTTP.sys directly, so IIS is **not required** for TLS — the certificate is registered with HTTP.sys via `netsh` (step 9b). If your organisation's policy requires IIS as the public-facing listener for HTTP/2, WAF integration, or centralised site management, you can configure IIS to reverse-proxy to the HTTP.sys process.
 
 ### 12a. Install IIS and the Application Request Routing module
 
@@ -714,9 +694,9 @@ Install-WindowsFeature Web-Server, Web-Asp-Net45 -IncludeManagementTools
 </configuration>
 ```
 
-### 12c. Remove the Kestrel HTTPS endpoint
+### 12c. IIS TLS termination
 
-When IIS handles TLS termination, remove the `Https` Kestrel endpoint from `appsettings.Production.json` and bind the certificate to the IIS site instead. Keep the `HttpLocalOnly` binding so the process is reachable internally.
+When IIS handles TLS termination, bind the certificate to the IIS site and update `ASPNETCORE_URLS` in the service registry environment (step 10c) to listen on `http://localhost:5150` only — remove the `https://+:8443` prefix. The HTTP.sys `netsh` registrations from step 9b are also no longer needed.
 
 ---
 
@@ -730,9 +710,9 @@ Complete this checklist after deploying. Do not sign off until every item passes
 - [ ] No `Error` or `Warning` entries in the Event Log immediately after start
 
 **TLS and access**
-- [ ] `https://<server>/` loads the UI in a browser from an admin workstation
+- [ ] `https://<server>:8443/` loads the UI in a browser from an admin workstation
 - [ ] The TLS certificate is valid (no browser warning; correct hostname; `NotAfter` is in the future)
-- [ ] Browsing to `http://<server>/` either redirects to HTTPS or is blocked
+- [ ] Browsing to `http://<server>:8443/` is either blocked or redirected to HTTPS
 - [ ] Attempting to reach the URL from a non-admin IP is blocked at the firewall
 
 **Functional**
@@ -747,7 +727,7 @@ Complete this checklist after deploying. Do not sign off until every item passes
 - [ ] The service account `svc-osmweb` is **not** a member of Domain Admins or any other privileged group
 - [ ] `appsettings.json` and `appsettings.Production.json` on the server do **not** contain the production password
 - [ ] `C:\Services\OsmUserWeb` is not writable by `svc-osmweb` (except `logs\`)
-- [ ] The certificate private key is accessible only to Administrators, SYSTEM, and `svc-osmweb`
+- [ ] `netsh http show sslcert ipport=0.0.0.0:8443` shows the expected certificate thumbprint
 
 ---
 
@@ -809,9 +789,22 @@ To forward logs to a SIEM or centralise retention, configure **Windows Event For
 When the TLS certificate is renewed:
 
 1. Import the new certificate into `Cert:\LocalMachine\My`
-2. Grant `svc-osmweb` read access to its private key (step 9b)
-3. Update the `Subject` value in `appsettings.Production.json` to the new certificate's Subject DN
-4. Restart the service:
+2. Re-register the new thumbprint with HTTP.sys (no service restart needed for the re-registration itself):
+
+```powershell
+$newThumb  = "NEW_THUMBPRINT_HERE"
+$httpsPort = 8443
+$appId     = "{$([System.Guid]::NewGuid().ToString())}"
+
+# Replace the old SSL cert binding
+foreach ($ip in @('0.0.0.0', '[::]')) {
+    netsh http delete sslcert "ipport=${ip}:$httpsPort"
+    netsh http add sslcert "ipport=${ip}:$httpsPort" `
+        "certhash=$newThumb" "appid=$appId"
+}
+```
+
+3. Restart the service so ASP.NET Core picks up the new cert from HTTP.sys:
 
 ```powershell
 sc.exe stop  OsmUserWeb
@@ -819,7 +812,9 @@ sc.exe start OsmUserWeb
 sc.exe query OsmUserWeb
 ```
 
-If using **win-acme** for automated renewal, add a renewal script that performs steps 3–4 automatically.
+> No changes to `appsettings.Production.json` are needed — HTTP.sys owns the certificate binding, not the application config.
+
+If using **win-acme** for automated renewal, configure a renewal script to run the `netsh` commands above automatically.
 
 ### Service account password rotation
 
@@ -839,10 +834,14 @@ sc.exe query OsmUserWeb
 
 ### Removing the service
 
+Use the uninstall script for a complete, safe removal. It discovers the HTTPS port from the registry, removes the Windows Service, HTTP.sys URL ACL and SSL cert bindings, firewall rules, and application files.
+
 ```powershell
-sc.exe stop   OsmUserWeb
-sc.exe delete OsmUserWeb
-Remove-Item   "C:\Services\OsmUserWeb" -Recurse -Force
-# Remove the firewall rules
-Remove-NetFirewallRule -DisplayName "OsmUserWeb*"
+# Minimal removal (service, HTTP.sys, firewall, files)
+.\Uninstall-OsmUserWeb.ps1
+
+# Also remove the svc-osmweb AD account and the TLS certificate from the store
+.\Uninstall-OsmUserWeb.ps1 -RemoveServiceAccount -RemoveCertificate
 ```
+
+See [`Uninstall-OsmUserWeb.ps1`](Uninstall-OsmUserWeb.ps1) for the full parameter reference.
