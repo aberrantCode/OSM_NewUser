@@ -553,6 +553,8 @@ Merge the `Kestrel` block into `C:\Services\OsmUserWeb\appsettings.Production.js
 }
 ```
 
+> **Self-signed certificates:** Set `"AllowInvalid": true`. When the service runs as a low-privilege account (`svc-osmweb`), Windows chain validation can fail for self-signed certificates due to revocation check timeouts, even when the certificate is present in `LocalMachine\Root`. `AllowInvalid: true` skips chain validation while leaving the TLS handshake fully intact — the certificate is still used and the connection is still encrypted.
+
 The `HttpLocalOnly` binding allows health checks and monitoring agents on the same server without going through TLS.
 
 ---

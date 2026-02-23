@@ -541,7 +541,18 @@ try {
     if (-not $SkipCertificate -and $CertThumbprint) {
         # Kestrel's CertificateConfig uses Subject (full DN), not Thumbprint.
         # An unrecognised key is silently ignored, leaving the cert config empty.
-        $certSubject = (Get-Item "Cert:\LocalMachine\My\$CertThumbprint").Subject
+        $certObj     = Get-Item "Cert:\LocalMachine\My\$CertThumbprint"
+        $certSubject = $certObj.Subject
+
+        # Self-signed certs (Issuer == Subject) require AllowInvalid: true.
+        # When run as a service account, Windows chain validation may fail on
+        # self-signed certs due to revocation check timeouts even if the cert
+        # is present in LocalMachine\Root. AllowInvalid: true skips chain
+        # validation while leaving the TLS handshake itself fully intact.
+        $isSelfSigned = $certObj.Issuer -eq $certObj.Subject
+        if ($isSelfSigned) {
+            Write-Warn "Self-signed certificate detected - setting AllowInvalid: true in Kestrel config."
+        }
 
         $configObj['Kestrel'] = [ordered]@{
             Endpoints = [ordered]@{
@@ -552,7 +563,7 @@ try {
                         Subject      = $certSubject
                         Store        = 'My'
                         Location     = 'LocalMachine'
-                        AllowInvalid = $false
+                        AllowInvalid = $isSelfSigned
                     }
                 }
             }
