@@ -177,7 +177,8 @@ namespace OsmInstall {
 
         public static void GrantSeServiceLogonRight(string account) {
             var attrs = new LSA_OBJECT_ATTRIBUTES();
-            uint r = LsaOpenPolicy(IntPtr.Zero, ref attrs, POLICY_ALL_ACCESS, out IntPtr h);
+            IntPtr h = IntPtr.Zero;
+            uint r = LsaOpenPolicy(IntPtr.Zero, ref attrs, POLICY_ALL_ACCESS, out h);
             if (r != 0) throw new Win32Exception(LsaNtStatusToWinError(r));
             try {
                 var sid = (SecurityIdentifier) new NTAccount(account).Translate(typeof(SecurityIdentifier));
@@ -475,14 +476,15 @@ try {
         Write-Step 'Step 5 . Delegating Active Directory permissions'
 
         $ouRules = @(
-            @{ Args = @($TargetOU, '/G', "$($script:SvcFullName):CC;user");  Desc = 'Create User objects in OU' }
-            @{ Args = @($TargetOU, '/G', "$($script:SvcFullName):RP;;user"); Desc = 'Read user properties in OU' }
-            @{ Args = @($TargetOU, '/G', "$($script:SvcFullName):WP;;user"); Desc = 'Write user properties in OU' }
+            @{ Args = @($TargetOU, '/G', "$($script:SvcFullName):CC;user");   Desc = 'Create User objects in OU' }
+            @{ Args = @($TargetOU, '/G', "$($script:SvcFullName):RP;;user");  Desc = 'Read user properties in OU' }
+            @{ Args = @($TargetOU, '/G', "$($script:SvcFullName):WP;;user");  Desc = 'Write user properties in OU' }
+            @{ Args = @($TargetOU, '/G', "$($script:SvcFullName):CA;Reset Password;user"); Desc = 'Reset password on User objects in OU' }
         )
         foreach ($rule in $ouRules) {
-            & dsacls @($rule.Args) | Out-Null
+            $out = & dsacls @($rule.Args) 2>&1
             if ($LASTEXITCODE -eq 0) { Write-Ok $rule.Desc }
-            else { Write-Warn "$($rule.Desc) - dsacls failed. Set manually per INSTALL.md step 4." }
+            else { Write-Warn "$($rule.Desc) - dsacls failed (exit $LASTEXITCODE): $out. Set manually per INSTALL.md step 4." }
         }
 
         try {
@@ -502,8 +504,14 @@ try {
         if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
     }
 
-    Copy-Item -Path (Join-Path $PublishPath '*') -Destination $InstallPath -Recurse -Force
-    Write-Ok "Files copied to $InstallPath"
+    $resolvedPublish = (Resolve-Path $PublishPath).Path.TrimEnd('\').TrimEnd('/')
+    $resolvedInstall = $InstallPath.TrimEnd('\').TrimEnd('/')
+    if ($resolvedPublish -eq $resolvedInstall) {
+        Write-Ok "Publish path is the install path - files already in place, skipping copy."
+    } else {
+        Copy-Item -Path (Join-Path $PublishPath '*') -Destination $InstallPath -Recurse -Force
+        Write-Ok "Files copied to $InstallPath"
+    }
 
     Set-HardenedAcl -Path $InstallPath `
         -Account $script:SvcFullName -AccountRights 'ReadAndExecute' `
