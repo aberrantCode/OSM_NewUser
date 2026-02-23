@@ -531,13 +531,17 @@ try {
     }
 
     if (-not $SkipCertificate -and $CertThumbprint) {
+        # Kestrel's CertificateConfig uses Subject (full DN), not Thumbprint.
+        # An unrecognised key is silently ignored, leaving the cert config empty.
+        $certSubject = (Get-Item "Cert:\LocalMachine\My\$CertThumbprint").Subject
+
         $configObj['Kestrel'] = [ordered]@{
             Endpoints = [ordered]@{
                 HttpLocalOnly = [ordered]@{ Url = 'http://localhost:5150' }
                 Https         = [ordered]@{
                     Url         = "https://*:$HttpsPort"
                     Certificate = [ordered]@{
-                        Thumbprint   = $CertThumbprint
+                        Subject      = $certSubject
                         Store        = 'My'
                         Location     = 'LocalMachine'
                         AllowInvalid = $false
