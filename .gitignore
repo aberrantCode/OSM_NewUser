@@ -26,3 +26,7 @@ Thumbs.db
 # Published app outputs
 src/DotNetWebServer/publish/
 src/DotNetWebServer/publish/**
+
+# Build script outputs
+dist/
+OsmUserWeb-*.zip
