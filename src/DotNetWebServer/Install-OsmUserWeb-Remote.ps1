@@ -181,7 +181,18 @@ try {
     Import-Module ActiveDirectory -ErrorAction Stop
     Write-Ok 'ActiveDirectory (RSAT) module loaded.'
 } catch {
-    throw 'ActiveDirectory module not found. Install RSAT: Add-WindowsCapability -Online -Name Rsat.ActiveDirectory.DS-LDS.Tools~~~~0.0.1.0'
+    Write-Warn 'ActiveDirectory module not found (RSAT not installed).'
+    $install = Read-Host '    Install RSAT now? This requires internet access. (Y/N)'
+    if ($install -notin 'Y', 'y') {
+        throw 'RSAT is required. Run manually: Add-WindowsCapability -Online -Name Rsat.ActiveDirectory.DS-LDS.Tools~~~~0.0.1.0'
+    }
+    Write-Host '    Installing RSAT ActiveDirectory tools (this may take a minute)...' -ForegroundColor Cyan
+    $cap = Add-WindowsCapability -Online -Name 'Rsat.ActiveDirectory.DS-LDS.Tools~~~~0.0.1.0' -ErrorAction Stop
+    if ($cap.RestartNeeded) {
+        throw 'RSAT installed but a restart is required. Reboot and re-run this script.'
+    }
+    Import-Module ActiveDirectory -ErrorAction Stop
+    Write-Ok 'ActiveDirectory (RSAT) module installed and loaded.'
 }
 
 $localDomain     = Get-ADDomain
