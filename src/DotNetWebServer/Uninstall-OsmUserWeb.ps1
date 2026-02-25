@@ -116,12 +116,22 @@ Write-Step 'Step 1 . Stopping and removing Windows Service'
 
 $svcExists = (& sc.exe query $ServiceName 2>$null) -join '' -match 'SERVICE_NAME'
 if ($svcExists) {
+    # Capture the OS process before sending the stop signal so we can wait for
+    # true process exit — SCM state STOPPED only means the SCM has deregistered
+    # the service; the process itself can still be alive and holding file handles.
+    $svcProcess = Get-Process -Name $ServiceName -ErrorAction SilentlyContinue
+
     & sc.exe stop $ServiceName 2>$null | Out-Null
-    # Wait for STOPPED (state 1) — not just for RUNNING (state 4) to end,
-    # because the process holds file handles through STOP_PENDING (state 3).
-    $deadline = (Get-Date).AddSeconds(15)
+
+    # 1. Wait for SCM to report STOPPED (state 1)
+    $deadline = (Get-Date).AddSeconds(20)
     do { Start-Sleep -Milliseconds 500
     } while ((& sc.exe query $ServiceName) -join '' -notmatch 'STATE\s+:\s+1\s+STOPPED' -and (Get-Date) -lt $deadline)
+
+    # 2. Wait for the actual OS process to exit (handles are only released here)
+    if ($svcProcess -and -not $svcProcess.HasExited) {
+        $null = $svcProcess.WaitForExit(10000)
+    }
 
     & sc.exe delete $ServiceName | Out-Null
     Write-Ok 'Service stopped and deleted.'
@@ -181,9 +191,9 @@ if (Test-Path $InstallPath) {
             Remove-Item $InstallPath -Recurse -Force -ErrorAction Stop
             $deleted = $true
         } catch {
-            if ($attempts -lt 2) {
-                Write-Warn "File removal attempt $attempts failed; retrying in 3 s..."
-                Start-Sleep -Seconds 3
+            if ($attempts -lt 3) {
+                Write-Warn "File removal attempt $attempts failed; retrying in 5 s..."
+                Start-Sleep -Seconds 5
             } else {
                 throw
             }
