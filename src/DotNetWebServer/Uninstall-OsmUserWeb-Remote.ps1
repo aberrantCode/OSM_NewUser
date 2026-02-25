@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Orchestrates a remote uninstallation of OsmUserWeb from an admin workstation.

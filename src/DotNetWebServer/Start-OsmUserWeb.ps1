@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Ensures the .NET 9 SDK is present, then starts the OsmUserWeb server.
