@@ -165,8 +165,14 @@ if ($fwRules) {
 Write-Step 'Step 4 . Removing application files'
 
 if (Test-Path $InstallPath) {
-    # Retry up to 3 times with a short back-off; the service process may still
-    # briefly hold file handles immediately after reaching STOPPED state.
+    # The installer hardens directory ACLs (breaks inheritance, sets explicit rules).
+    # Reset ownership and grant Administrators full control before deleting so that
+    # the deletion succeeds regardless of the network-logon token or ACL state.
+    Write-Host "    Resetting ACLs on $InstallPath ..."
+    & takeown /F $InstallPath /R /A /D Y 2>$null | Out-Null
+    & icacls $InstallPath /grant 'Administrators:(OI)(CI)F' /T /C /Q 2>$null | Out-Null
+
+    # Retry once in case a handle was still open at the moment we attempt deletion.
     $attempts = 0
     $deleted  = $false
     do {
@@ -175,9 +181,9 @@ if (Test-Path $InstallPath) {
             Remove-Item $InstallPath -Recurse -Force -ErrorAction Stop
             $deleted = $true
         } catch {
-            if ($attempts -lt 3) {
-                Write-Warn "File removal attempt $attempts failed (handles still open?); retrying in 2 s..."
-                Start-Sleep -Seconds 2
+            if ($attempts -lt 2) {
+                Write-Warn "File removal attempt $attempts failed; retrying in 3 s..."
+                Start-Sleep -Seconds 3
             } else {
                 throw
             }
