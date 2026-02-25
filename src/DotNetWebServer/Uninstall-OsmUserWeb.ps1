@@ -23,6 +23,10 @@
     Also remove the OsmUserWeb self-signed certificate (CN=<hostname>) from
     Cert:\LocalMachine\My.  Has no effect on certificates issued by a real CA.
 
+.PARAMETER Force
+    Skip the interactive confirmation prompt.  Used by Uninstall-OsmUserWeb-Remote.ps1
+    when running in a non-interactive PS Remoting session.
+
 .EXAMPLE
     .\Uninstall-OsmUserWeb.ps1
 
@@ -34,7 +38,8 @@ param(
     [string]$InstallPath       = 'C:\Services\OsmUserWeb',
     [string]$SvcAccountName    = 'svc-osmweb',
     [switch]$RemoveServiceAccount,
-    [switch]$RemoveCertificate
+    [switch]$RemoveCertificate,
+    [switch]$Force
 )
 
 Set-StrictMode -Version Latest
@@ -94,10 +99,14 @@ if ($RemoveCertificate -and $boundThumbprint) {
 }
 Write-Host ''
 
-$confirm = Read-Host '  Proceed? (Y/N)'
-if ($confirm -notin 'Y', 'y') {
-    Write-Host 'Aborted. No changes were made.' -ForegroundColor Yellow
-    exit 0
+if ($Force) {
+    Write-Host '  (-Force specified -- skipping confirmation)' -ForegroundColor DarkGray
+} else {
+    $confirm = Read-Host '  Proceed? (Y/N)'
+    if ($confirm -notin 'Y', 'y') {
+        Write-Host 'Aborted. No changes were made.' -ForegroundColor Yellow
+        exit 0
+    }
 }
 
 # ==============================================================================
@@ -108,9 +117,11 @@ Write-Step 'Step 1 . Stopping and removing Windows Service'
 $svcExists = (& sc.exe query $ServiceName 2>$null) -join '' -match 'SERVICE_NAME'
 if ($svcExists) {
     & sc.exe stop $ServiceName 2>$null | Out-Null
-    $deadline = (Get-Date).AddSeconds(10)
+    # Wait for STOPPED (state 1) — not just for RUNNING (state 4) to end,
+    # because the process holds file handles through STOP_PENDING (state 3).
+    $deadline = (Get-Date).AddSeconds(15)
     do { Start-Sleep -Milliseconds 500
-    } while ((& sc.exe query $ServiceName) -join '' -match 'STATE.*4.*RUNNING' -and (Get-Date) -lt $deadline)
+    } while ((& sc.exe query $ServiceName) -join '' -notmatch 'STATE\s+:\s+1\s+STOPPED' -and (Get-Date) -lt $deadline)
 
     & sc.exe delete $ServiceName | Out-Null
     Write-Ok 'Service stopped and deleted.'
@@ -154,7 +165,24 @@ if ($fwRules) {
 Write-Step 'Step 4 . Removing application files'
 
 if (Test-Path $InstallPath) {
-    Remove-Item $InstallPath -Recurse -Force
+    # Retry up to 3 times with a short back-off; the service process may still
+    # briefly hold file handles immediately after reaching STOPPED state.
+    $attempts = 0
+    $deleted  = $false
+    do {
+        $attempts++
+        try {
+            Remove-Item $InstallPath -Recurse -Force -ErrorAction Stop
+            $deleted = $true
+        } catch {
+            if ($attempts -lt 3) {
+                Write-Warn "File removal attempt $attempts failed (handles still open?); retrying in 2 s..."
+                Start-Sleep -Seconds 2
+            } else {
+                throw
+            }
+        }
+    } while (-not $deleted)
     Write-Ok "Removed: $InstallPath"
 } else {
     Write-Skip "Install path not found: $InstallPath"
