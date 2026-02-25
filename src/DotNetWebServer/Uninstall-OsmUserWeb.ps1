@@ -175,31 +175,39 @@ if ($fwRules) {
 Write-Step 'Step 4 . Removing application files'
 
 if (Test-Path $InstallPath) {
-    # The installer hardens directory ACLs (breaks inheritance, sets explicit rules).
-    # Reset ownership and grant Administrators full control before deleting so that
-    # the deletion succeeds regardless of the network-logon token or ACL state.
-    Write-Host "    Resetting ACLs on $InstallPath ..."
-    & takeown /F $InstallPath /R /A /D Y 2>$null | Out-Null
-    & icacls $InstallPath /grant 'Administrators:(OI)(CI)F' /T /C /Q 2>$null | Out-Null
+    # The installer breaks ACL inheritance and sets explicit rules.  A PS Remoting
+    # (network-logon) token does not have SeTakeOwnershipPrivilege or SeBackupPrivilege
+    # enabled, so even takeown/icacls fail silently.  NT AUTHORITY\SYSTEM is granted
+    # FullControl by the installer and is not subject to UAC filtering, so delegate
+    # the deletion to a temporary one-shot scheduled task running as SYSTEM.
+    Write-Host "    Deleting $InstallPath via SYSTEM scheduled task ..."
 
-    # Retry once in case a handle was still open at the moment we attempt deletion.
-    $attempts = 0
-    $deleted  = $false
+    $taskName = "OsmUserWebCleanup_$(New-Guid)"
+    Register-ScheduledTask `
+        -TaskName $taskName `
+        -Action   (New-ScheduledTaskAction -Execute 'cmd.exe' `
+                       -Argument "/c rd /s /q `"$InstallPath`"") `
+        -Settings (New-ScheduledTaskSettingsSet `
+                       -ExecutionTimeLimit (New-TimeSpan -Minutes 2)) `
+        -RunLevel Highest `
+        -User     'NT AUTHORITY\SYSTEM' `
+        -Force | Out-Null
+
+    Start-ScheduledTask -TaskName $taskName
+
+    $deadline = (Get-Date).AddSeconds(30)
     do {
-        $attempts++
-        try {
-            Remove-Item $InstallPath -Recurse -Force -ErrorAction Stop
-            $deleted = $true
-        } catch {
-            if ($attempts -lt 3) {
-                Write-Warn "File removal attempt $attempts failed; retrying in 5 s..."
-                Start-Sleep -Seconds 5
-            } else {
-                throw
-            }
-        }
-    } while (-not $deleted)
-    Write-Ok "Removed: $InstallPath"
+        Start-Sleep -Milliseconds 500
+        $taskState = (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue).State
+    } while ($taskState -in 'Queued', 'Running' -and (Get-Date) -lt $deadline)
+
+    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+
+    if (Test-Path $InstallPath) {
+        Write-Warn "Could not remove $InstallPath -- remove it manually."
+    } else {
+        Write-Ok "Removed: $InstallPath"
+    }
 } else {
     Write-Skip "Install path not found: $InstallPath"
 }
