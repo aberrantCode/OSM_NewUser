@@ -75,6 +75,74 @@ To change the port:
 dotnet run --urls "http://localhost:8080"
 ```
 
+## Versioning
+
+OsmUserWeb uses a three-part version number derived automatically at build time:
+
+```
+MAJOR . MINOR . PATCH  [+ SHA]
+  │       │       │        └─ short git commit hash (InformationalVersion only)
+  │       │       └────────── git rev-list --count HEAD
+  │       └────────────────── version.json  ← edit to bump
+  └────────────────────────── version.json  ← edit to bump
+```
+
+**PATCH increments automatically with every commit** — no manual step required.
+
+**MAJOR and MINOR** are stored in `version.json` at the repository root and are the only values that need to be edited for significant releases:
+
+```json
+{
+  "major": 1,
+  "minor": 0
+}
+```
+
+### Producing a versioned build
+
+Use the build script from the repository root. It reads `version.json`, queries git for the commit count and short SHA, injects both into the binary, and names the zip artifact accordingly:
+
+```powershell
+# Framework-dependent, no zip
+.\Build-OsmUserWeb.ps1
+
+# Self-contained, zipped for hand-off  →  OsmUserWeb-v1.0.47-win-x64.zip
+.\Build-OsmUserWeb.ps1 -SelfContained -ZipOutput
+```
+
+The resulting distribution folder contains a `version.txt` manifest:
+
+```
+OsmUserWeb Build Manifest
+=========================
+Version              : 1.0.47
+InformationalVersion : 1.0.47+a3f2c1d
+Configuration        : Release
+Runtime              : win-x64
+Self-contained       : False
+Build date (UTC)     : 2026-02-25 14:30:00 UTC
+```
+
+The same version is embedded in the binary's `FileVersion` and `InformationalVersion` metadata, visible in Windows Explorer → Properties → Details.
+
+### Development builds
+
+Plain `dotnet build` / `dotnet run` (without the build script) produce a binary stamped `0.0.0+local`. This is expected and harmless for local development.
+
+### Bumping MAJOR or MINOR
+
+1. Edit `version.json` — increment `major` or `minor`, reset `minor` to `0` if bumping `major`.
+2. Commit the change.
+3. Run `.\Build-OsmUserWeb.ps1` — the new version takes effect immediately from that commit onward.
+
+### Shallow clones
+
+If the repository was cloned with `--depth`, the git commit count will be lower than the true value and the PATCH number will be inaccurate. Unshallow before building for release:
+
+```powershell
+git fetch --unshallow
+```
+
 ## Web UI Workflow
 
 The UI mirrors the two-step flow of the PowerShell script:
