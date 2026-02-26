@@ -87,7 +87,8 @@ $installerScripts = @(
     'Uninstall-OsmUserWeb.ps1'
     'Uninstall-OsmUserWeb-Remote.ps1'
     'Start-OsmUserWeb.ps1'
-    'Migrate-ToHttpSys.ps1'
+    'Update-OsmUserWeb.ps1'
+    'Diagnose-OsmUserWeb.ps1'
     'INSTALL.md'
     'README.md'
 )
