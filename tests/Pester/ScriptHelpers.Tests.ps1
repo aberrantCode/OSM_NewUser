@@ -37,7 +37,7 @@ Describe 'Read-WithDefault' {
         Mock Read-Host { return '' }
         Read-WithDefault 'Path' 'C:\Services\OsmUserWeb'
         Should -Invoke Read-Host -Times 1 -ParameterFilter {
-            $args -contains 'Path [C:\Services\OsmUserWeb]'
+            $Prompt -eq 'Path [C:\Services\OsmUserWeb]'
         }
     }
 }

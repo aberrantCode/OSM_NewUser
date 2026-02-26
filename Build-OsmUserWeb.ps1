@@ -195,7 +195,7 @@ if (-not $pesterAvailable) {
     Install-Module Pester -Force -Scope CurrentUser -MinimumVersion 5.0 -Repository PSGallery
     Import-Module Pester -MinimumVersion 5.0
 } else {
-    Import-Module $pesterAvailable.ModuleBase -Version $pesterAvailable.Version
+    Import-Module Pester -RequiredVersion $pesterAvailable.Version
 }
 
 $pesterDir    = Join-Path $projectRoot 'tests\Pester'
