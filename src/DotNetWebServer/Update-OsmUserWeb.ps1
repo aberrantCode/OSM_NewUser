@@ -100,8 +100,9 @@ try {
     Write-Step 'Step 2 . Locating publish output'
 
     if (-not $PublishPath) {
-        do { $PublishPath = (Read-Host 'Path to dotnet publish output (folder containing OsmUserWeb.exe)').Trim()
-        } while ([string]::IsNullOrWhiteSpace($PublishPath))
+        $defaultPublish = Join-Path $PSScriptRoot 'app'
+        $PublishPath = (Read-Host "Path to dotnet publish output [$defaultPublish]").Trim()
+        if ([string]::IsNullOrWhiteSpace($PublishPath)) { $PublishPath = $defaultPublish }
     }
     $PublishPath = (Resolve-Path $PublishPath -ErrorAction Stop).Path
     if (-not (Test-Path (Join-Path $PublishPath 'OsmUserWeb.exe'))) {

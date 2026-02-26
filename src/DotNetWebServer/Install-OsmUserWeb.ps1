@@ -54,9 +54,9 @@
 
 .PARAMETER CertPfxPath
     Path to a PFX file containing the TLS certificate and private key.
-    Default: C:\Users\erik\AppData\Local\Temp\osmweb-cert-87AC936BF0C3F405A151F7EDB865DE88EA0D27CA.pfx
+    If omitted, the installer checks <InstallPath>\certs\osmweb.pfx first (re-install scenario).
+    If that does not exist either, the interactive TLS certificate menu is displayed.
     Prompted interactively showing the default unless -Force or -SkipCertificate is set.
-    If this param is empty at runtime the TLS certificate menu is displayed.
 
 .PARAMETER CertPfxPassword
     Password for the PFX file supplied via -CertPfxPath.
@@ -140,7 +140,7 @@ param(
     [string]$TargetOU           = 'OU=AdminAccounts,DC=opbta,DC=local',
     [string]$GroupName          = 'Domain Admins',
     [string]$DefaultPassword,
-    [string]$CertPfxPath        = 'C:\Users\erik\AppData\Local\Temp\osmweb-cert-87AC936BF0C3F405A151F7EDB865DE88EA0D27CA.pfx',
+    [string]$CertPfxPath        = '',
     [string]$CertPfxPassword,
     [string]$AdminSubnet        = '192.168.0.0/24',
     [int]   $HttpsPort          = 8443,
@@ -378,7 +378,8 @@ try {
     Write-Ok "Detected domain: $($script:DomainFQDN) (NetBIOS: $($script:DomainShort))"
 
     if (-not $PublishPath) {
-        $PublishPath = Read-NonEmpty 'Path to dotnet publish output (e.g. C:\temp\publish)'
+        $defaultPublish = Join-Path $PSScriptRoot 'app'
+        $PublishPath = if ($Force) { $defaultPublish } else { Read-WithDefault 'Path to dotnet publish output' $defaultPublish }
     }
     if (-not (Test-Path $PublishPath)) {
         throw "Publish path not found: $PublishPath"
@@ -413,15 +414,32 @@ try {
     }
     $script:SvcPassword = $SvcAccountPassword
 
-    # Certificate - collect PFX path and password
-    # When a PFX path is already known (via default or parameter) and we are
-    # running interactively, let the user confirm or override the path before
-    # the password is requested.  The cert-type menu below is skipped in this case.
-    if (-not $SkipCertificate -and $CertPfxPath -and -not $CertSelfSigned -and -not $Force) {
-        Write-Host ''
-        $CertPfxPath = Read-WithDefault 'Certificate PFX path' $CertPfxPath
-        if (-not (Test-Path $CertPfxPath)) { throw "PFX file not found: $CertPfxPath" }
-        Write-Ok "PFX file located: $CertPfxPath"
+    # Certificate - collect PFX path or auto-generate.
+    # Default: <InstallPath>\certs\osmweb.pfx so the cert lives in the install
+    # directory rather than a user-profile temp folder.
+    # If no file is found at the default path a self-signed cert is generated.
+    if (-not $SkipCertificate -and -not $CertSelfSigned) {
+        $defaultCertPath = Join-Path $InstallPath 'certs\osmweb.pfx'
+
+        if (-not $CertPfxPath) {
+            if ($Force) {
+                $CertPfxPath = $defaultCertPath
+            } else {
+                Write-Host ''
+                $CertPfxPath = Read-WithDefault 'Certificate PFX path' $defaultCertPath
+            }
+        }
+
+        if (Test-Path $CertPfxPath) {
+            Write-Ok "PFX file located: $CertPfxPath"
+        } elseif ($CertPfxPath -eq $defaultCertPath) {
+            # Accepted the install-dir default but no file present yet — generate self-signed.
+            Write-Ok "No certificate found at '$CertPfxPath' — a self-signed certificate will be generated."
+            $CertSelfSigned = $true
+            $CertPfxPath    = $null
+        } else {
+            throw "PFX file not found: $CertPfxPath"
+        }
     }
 
     if (-not $SkipCertificate -and -not $CertPfxPath) {
