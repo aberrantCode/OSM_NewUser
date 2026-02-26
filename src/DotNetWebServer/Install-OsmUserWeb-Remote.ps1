@@ -212,7 +212,9 @@ Write-Ok "Installer script found: $installerScript"
 Write-Step 'Step 1 . Collecting configuration inputs'
 
 if (-not $PublishPath) {
-    $PublishPath = Read-NonEmpty 'Local path to dotnet publish output (must contain OsmUserWeb.exe)'
+    $defaultPublish = Join-Path $PSScriptRoot 'app'
+    $v = (Read-Host "Local path to dotnet publish output [$defaultPublish]").Trim()
+    $PublishPath = if ([string]::IsNullOrWhiteSpace($v)) { $defaultPublish } else { $v }
 }
 $PublishPath = (Resolve-Path $PublishPath).Path
 if (-not (Test-Path (Join-Path $PublishPath 'OsmUserWeb.exe'))) {
