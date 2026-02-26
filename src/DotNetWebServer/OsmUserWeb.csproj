@@ -21,6 +21,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="OsmUserWeb.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.0" />
     <!-- Windows-only; these packages are no-ops on non-Windows platforms -->
     <PackageReference Include="System.DirectoryServices" Version="9.0.0" />

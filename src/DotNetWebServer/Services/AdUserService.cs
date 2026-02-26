@@ -8,6 +8,7 @@ using OsmUserWeb.Models;
 namespace OsmUserWeb.Services;
 
 public partial class AdUserService(IOptions<AdSettings> settings, ILogger<AdUserService> logger)
+    : IAdUserService
 {
     private readonly AdSettings _settings = settings.Value;
 
@@ -107,22 +108,65 @@ public partial class AdUserService(IOptions<AdSettings> settings, ILogger<AdUser
             _settings.TargetOU);
     }
 
-    // ── Private helpers ───────────────────────────────────────────────────────
+    // ── Pure static helpers (testable without AD) ─────────────────────────────
 
-    private string ResolveBaseName(string? baseName)
+    /// <summary>
+    /// Returns <paramref name="baseName"/> trimmed if non-empty; otherwise strips
+    /// trailing digits from <paramref name="processUser"/> to derive a base name.
+    /// </summary>
+    internal static string ResolveBaseName(string? baseName, string processUser)
     {
         if (!string.IsNullOrWhiteSpace(baseName))
             return baseName.Trim();
 
-        var processUser = Environment.UserName;
-        var derived     = TrailingDigitsRegex().Replace(processUser, string.Empty);
+        var derived = TrailingDigitsRegex().Replace(processUser, string.Empty);
 
         if (string.IsNullOrWhiteSpace(derived))
             throw new ArgumentException(
                 "Base name resolved to an empty string. Provide a BaseName explicitly.");
 
-        logger.LogInformation("Derived base name '{Base}' from process user '{User}'", derived, processUser);
         return derived;
+    }
+
+    /// <summary>
+    /// Returns max(suffix numbers among <paramref name="existingNames"/> that match
+    /// <c>^{baseName}\d+$</c>) + 1, or 1 when no matches exist.
+    /// </summary>
+    internal static int ComputeNextNumber(string baseName, IEnumerable<string> existingNames)
+    {
+        var pattern = new Regex(
+            $@"^{Regex.Escape(baseName)}(\d+)$",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        var numbers = new List<int>();
+        foreach (var name in existingNames)
+        {
+            var match = pattern.Match(name);
+            if (match.Success)
+                numbers.Add(int.Parse(match.Groups[1].Value));
+        }
+
+        return (numbers.Count > 0 ? numbers.Max() : 0) + 1;
+    }
+
+    /// <summary>
+    /// Joins non-null, non-empty group names with ", ".
+    /// </summary>
+    internal static string FormatMemberOf(IEnumerable<string?> groupNames) =>
+        string.Join(", ", groupNames.Where(n => !string.IsNullOrEmpty(n)));
+
+    // ── Private instance helpers ──────────────────────────────────────────────
+
+    private string ResolveBaseName(string? baseName)
+    {
+        var processUser = Environment.UserName;
+        var resolved    = ResolveBaseName(baseName, processUser);
+
+        if (string.IsNullOrWhiteSpace(baseName))
+            logger.LogInformation("Derived base name '{Base}' from process user '{User}'",
+                resolved, processUser);
+
+        return resolved;
     }
 
     private void VerifyOuExists()
@@ -140,24 +184,18 @@ public partial class AdUserService(IOptions<AdSettings> settings, ILogger<AdUser
 
     private static int FindNextNumber(string baseName, PrincipalContext ctx)
     {
-        var pattern = new Regex(
-            $@"^{Regex.Escape(baseName)}(\d+)$",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-        using var query   = new UserPrincipal(ctx) { SamAccountName = $"{baseName}*" };
+        using var query    = new UserPrincipal(ctx) { SamAccountName = $"{baseName}*" };
         using var searcher = new PrincipalSearcher(query);
 
-        var numbers = new List<int>();
+        var names = new List<string>();
         using var results = searcher.FindAll();
         foreach (var principal in results)
         {
-            if (principal is not UserPrincipal up) continue;
-            var match = pattern.Match(up.SamAccountName ?? string.Empty);
-            if (match.Success)
-                numbers.Add(int.Parse(match.Groups[1].Value));
+            if (principal is UserPrincipal up)
+                names.Add(up.SamAccountName ?? string.Empty);
         }
 
-        return (numbers.Count > 0 ? numbers.Max() : 0) + 1;
+        return ComputeNextNumber(baseName, names);
     }
 
     private static string GetDomainDnsRoot()
@@ -166,16 +204,8 @@ public partial class AdUserService(IOptions<AdSettings> settings, ILogger<AdUser
         return domain.Name;
     }
 
-    private static string BuildMemberOf(UserPrincipal user)
-    {
-        var names = new List<string>();
-        foreach (var group in user.GetGroups())
-        {
-            if (!string.IsNullOrEmpty(group.Name))
-                names.Add(group.Name);
-        }
-        return string.Join(", ", names);
-    }
+    private static string BuildMemberOf(UserPrincipal user) =>
+        FormatMemberOf(user.GetGroups().Select(g => g.Name));
 
     [GeneratedRegex(@"\d+$")]
     private static partial Regex TrailingDigitsRegex();

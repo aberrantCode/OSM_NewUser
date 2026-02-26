@@ -90,6 +90,7 @@ $installerScripts = @(
     'Start-OsmUserWeb.ps1'
     'Update-OsmUserWeb.ps1'
     'Diagnose-OsmUserWeb.ps1'
+    'ScriptHelpers.ps1'     # shared helper functions; dot-sourced by the installers
     'INSTALL.md'
     'README.md'
 )
@@ -181,8 +182,37 @@ if ($Clean) {
     }
 }
 
+# ── Pester tests (PowerShell script helpers) ───────────────────────────────────
+Write-Step 'Running Pester tests'
+
+$pesterAvailable = Get-Module -ListAvailable Pester |
+    Where-Object { $_.Version -ge [version]'5.0' } |
+    Sort-Object Version -Descending |
+    Select-Object -First 1
+
+if (-not $pesterAvailable) {
+    Write-Host '    Pester 5 not found — installing for CurrentUser...'
+    Install-Module Pester -Force -Scope CurrentUser -MinimumVersion 5.0 -Repository PSGallery
+    Import-Module Pester -MinimumVersion 5.0
+} else {
+    Import-Module $pesterAvailable.ModuleBase -Version $pesterAvailable.Version
+}
+
+$pesterDir    = Join-Path $projectRoot 'tests\Pester'
+$pesterCfg    = New-PesterConfiguration
+$pesterCfg.Run.Path      = $pesterDir
+$pesterCfg.Run.PassThru  = $true
+$pesterCfg.Output.Verbosity = 'Normal'
+
+$pesterResult = Invoke-Pester -Configuration $pesterCfg
+
+if ($pesterResult.FailedCount -gt 0) {
+    Write-Error "Pester: $($pesterResult.FailedCount) test(s) failed. Build aborted."
+}
+Write-Success "Pester: $($pesterResult.PassedCount) test(s) passed."
+
 # ── dotnet test ────────────────────────────────────────────────────────────────
-Write-Step "Running tests ($Configuration)"
+Write-Step "Running dotnet tests ($Configuration)"
 
 & dotnet test $testProject '--configuration' $Configuration
 Assert-ExitCode 'dotnet test'

@@ -17,14 +17,20 @@ builder.Host.UseWindowsService(options => options.ServiceName = "OsmUserWeb");
 //   netsh http add urlacl url=https://+:<port>/ user=DOMAIN\svc-osmweb
 //   netsh http add sslcert ipport=0.0.0.0:<port> certhash=<thumbprint> appid={guid}
 // URL prefixes come from the ASPNETCORE_URLS service registry environment variable.
-builder.WebHost.UseHttpSys(options =>
+//
+// HTTP.sys is skipped in the "Testing" environment so that WebApplicationFactory
+// can substitute its own in-process TestServer without a kernel-mode conflict.
+if (!builder.Environment.IsEnvironment("Testing"))
 {
-    options.Authentication.Schemes = AuthenticationSchemes.None;
-    options.Authentication.AllowAnonymous = true;
-});
+    builder.WebHost.UseHttpSys(options =>
+    {
+        options.Authentication.Schemes = AuthenticationSchemes.None;
+        options.Authentication.AllowAnonymous = true;
+    });
+}
 
 builder.Services.Configure<AdSettings>(builder.Configuration.GetSection("AdSettings"));
-builder.Services.AddScoped<AdUserService>();
+builder.Services.AddScoped<IAdUserService, AdUserService>();
 
 var app = builder.Build();
 
@@ -35,7 +41,7 @@ app.UseStaticFiles();
 // Returns the next auto-incremented username and a summary of what will be created.
 app.MapGet("/api/preview", (
     [FromQuery] string? baseName,
-    AdUserService svc) =>
+    IAdUserService svc) =>
 {
     try
     {
@@ -59,7 +65,7 @@ app.MapGet("/api/preview", (
 // Creates the AD account. Returns 201 with the verified user details on success.
 app.MapPost("/api/users", (
     [FromBody] CreateUserRequest request,
-    AdUserService svc) =>
+    IAdUserService svc) =>
 {
     try
     {
@@ -81,3 +87,6 @@ app.MapPost("/api/users", (
 });
 
 app.Run();
+
+// Expose Program to the test project (WebApplicationFactory<Program>).
+public partial class Program { }
