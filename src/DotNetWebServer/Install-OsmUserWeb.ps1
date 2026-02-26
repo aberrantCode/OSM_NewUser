@@ -162,27 +162,15 @@ $Description = 'ASP.NET Core web UI for creating numbered Active Directory admin
 
 $LogTranscript = Join-Path $env:TEMP "Install-OsmUserWeb-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
 
+# -- Shared input helpers (dot-sourced so Pester can test them in isolation) ---
+. (Join-Path $PSScriptRoot 'ScriptHelpers.ps1')
+
 # -- Output helpers -----------------------------------------------------------
 
 function Write-Step { param([string]$Msg) Write-Host "`n  >> $Msg" -ForegroundColor Cyan }
 function Write-Ok   { param([string]$Msg) Write-Host "    [OK]   $Msg" -ForegroundColor Green }
 function Write-Warn { param([string]$Msg) Write-Host "    [WARN] $Msg" -ForegroundColor Yellow }
 function Write-Fail { param([string]$Msg) Write-Host "    [FAIL] $Msg" -ForegroundColor Red }
-
-function Read-NonEmpty {
-    param([string]$Prompt)
-    do { $v = (Read-Host $Prompt).Trim() } while ([string]::IsNullOrWhiteSpace($v))
-    return $v
-}
-
-function Read-WithDefault {
-    # Prompts the user with the current default shown in brackets.
-    # Pressing Enter (empty input) accepts the default.
-    param([string]$Prompt, [string]$Default)
-    $v = (Read-Host "$Prompt [$Default]").Trim()
-    if ([string]::IsNullOrWhiteSpace($v)) { return $Default }
-    return $v
-}
 
 function Read-PasswordConfirmed {
     param([string]$Label)
