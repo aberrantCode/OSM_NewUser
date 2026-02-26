@@ -40,8 +40,8 @@
 
 .PARAMETER TargetOU
     Distinguished name of the OU where new AD accounts will be created.
-    Example: OU=AdminAccounts,DC=contoso,DC=com
-    Prompted interactively if omitted.
+    Default: OU=AdminAccounts,DC=opbta,DC=local
+    Prompted interactively showing the default unless -Force is set.
 
 .PARAMETER GroupName
     AD group that newly created accounts are added to. Default: Domain Admins
@@ -54,16 +54,18 @@
 
 .PARAMETER CertPfxPath
     Path to a PFX file containing the TLS certificate and private key.
-    If omitted the script offers to create a self-signed certificate (testing)
-    or skip TLS setup (manual configuration later).
+    Default: C:\Users\erik\AppData\Local\Temp\osmweb-cert-87AC936BF0C3F405A151F7EDB865DE88EA0D27CA.pfx
+    Prompted interactively showing the default unless -Force or -SkipCertificate is set.
+    If this param is empty at runtime the TLS certificate menu is displayed.
 
 .PARAMETER CertPfxPassword
     Password for the PFX file supplied via -CertPfxPath.
     Prompted interactively if -CertPfxPath is given but this is omitted.
 
 .PARAMETER AdminSubnet
-    CIDR range that is allowed to reach the web UI. Example: 10.0.1.0/24
-    Prompted interactively if omitted (unless -SkipFirewall is set).
+    CIDR range that is allowed to reach the web UI.
+    Default: 192.168.0.0/24
+    Prompted interactively showing the default unless -Force or -SkipFirewall is set.
 
 .PARAMETER HttpsPort
     HTTPS listener port. Default: 8443
@@ -135,12 +137,12 @@ param(
     [string]$InstallPath        = 'C:\Services\OsmUserWeb',
     [string]$SvcAccountName     = 'svc-osmweb',
     [string]$SvcAccountPassword,
-    [string]$TargetOU,
+    [string]$TargetOU           = 'OU=AdminAccounts,DC=opbta,DC=local',
     [string]$GroupName          = 'Domain Admins',
     [string]$DefaultPassword,
-    [string]$CertPfxPath,
+    [string]$CertPfxPath        = 'C:\Users\erik\AppData\Local\Temp\osmweb-cert-87AC936BF0C3F405A151F7EDB865DE88EA0D27CA.pfx',
     [string]$CertPfxPassword,
-    [string]$AdminSubnet,
+    [string]$AdminSubnet        = '192.168.0.0/24',
     [int]   $HttpsPort          = 8443,
     [switch]$SkipAdAccount,
     [switch]$SkipAdDelegation,
@@ -170,6 +172,15 @@ function Write-Fail { param([string]$Msg) Write-Host "    [FAIL] $Msg" -Foregrou
 function Read-NonEmpty {
     param([string]$Prompt)
     do { $v = (Read-Host $Prompt).Trim() } while ([string]::IsNullOrWhiteSpace($v))
+    return $v
+}
+
+function Read-WithDefault {
+    # Prompts the user with the current default shown in brackets.
+    # Pressing Enter (empty input) accepts the default.
+    param([string]$Prompt, [string]$Default)
+    $v = (Read-Host "$Prompt [$Default]").Trim()
+    if ([string]::IsNullOrWhiteSpace($v)) { return $Default }
     return $v
 }
 
@@ -377,8 +388,8 @@ try {
     }
     Write-Ok "Publish source verified: $PublishPath"
 
-    if (-not $TargetOU) {
-        $TargetOU = Read-NonEmpty "Target OU distinguished name`n  (e.g. OU=AdminAccounts,DC=$($script:DomainFQDN -replace '\.', ',DC='))`n  TargetOU"
+    if (-not $Force) {
+        $TargetOU = Read-WithDefault 'Target OU' $TargetOU
     }
     if ($SkipAdAccount -and $SkipAdDelegation) {
         Write-Ok "Target OU (not verified — AD steps skipped): $TargetOU"
@@ -403,6 +414,16 @@ try {
     $script:SvcPassword = $SvcAccountPassword
 
     # Certificate - collect PFX path and password
+    # When a PFX path is already known (via default or parameter) and we are
+    # running interactively, let the user confirm or override the path before
+    # the password is requested.  The cert-type menu below is skipped in this case.
+    if (-not $SkipCertificate -and $CertPfxPath -and -not $CertSelfSigned -and -not $Force) {
+        Write-Host ''
+        $CertPfxPath = Read-WithDefault 'Certificate PFX path' $CertPfxPath
+        if (-not (Test-Path $CertPfxPath)) { throw "PFX file not found: $CertPfxPath" }
+        Write-Ok "PFX file located: $CertPfxPath"
+    }
+
     if (-not $SkipCertificate -and -not $CertPfxPath) {
         if ($CertSelfSigned) {
             $certChoice = '2'
@@ -479,9 +500,9 @@ try {
     $script:PfxPassword = $CertPfxPassword
 
     # Firewall subnet
-    if (-not $SkipFirewall -and -not $AdminSubnet) {
+    if (-not $SkipFirewall -and -not $Force) {
         Write-Host ''
-        $AdminSubnet = Read-NonEmpty 'Admin subnet allowed to access the UI, in CIDR notation (e.g. 10.0.1.0/24)'
+        $AdminSubnet = Read-WithDefault 'Admin subnet (CIDR)' $AdminSubnet
     }
 
     Write-Host ''
@@ -815,9 +836,35 @@ try {
 
     if ($running) {
         Write-Ok 'Service reached RUNNING state.'
+
+        # Verify HTTP.sys actually opened the port — SCM RUNNING only means the process
+        # started, not that the web listener is up.  Give HTTP.sys a moment to register.
+        if (-not $SkipCertificate -and $script:CertThumbprint) {
+            Start-Sleep -Seconds 3
+            $curlOut = & curl.exe -k -s -o $null -w '%{http_code}' "https://localhost:$HttpsPort/" 2>&1
+            if ($curlOut -eq '200') {
+                Write-Ok "HTTPS connectivity verified: https://localhost:$HttpsPort/ -> HTTP 200"
+            } else {
+                Write-Warn "HTTPS connectivity check failed (curl returned: '$curlOut')."
+                Write-Warn "Port $HttpsPort is not responding. The service may have crashed after starting."
+                Write-Host ''
+                Write-Host '  Recent application event log entries:' -ForegroundColor Yellow
+                Get-EventLog -LogName Application -Source $ServiceName -Newest 10 `
+                    -ErrorAction SilentlyContinue |
+                    Select-Object TimeGenerated, EntryType, Message | Format-List
+                Write-Host '  Recent HTTP.sys event log entries:' -ForegroundColor Yellow
+                Get-EventLog -LogName System -Source 'HTTP' -Newest 5 `
+                    -ErrorAction SilentlyContinue |
+                    Select-Object TimeGenerated, EntryType, Message | Format-List
+            }
+        }
     } else {
         Write-Warn 'Service did not reach RUNNING within 30 seconds.'
-        Write-Warn "Check the event log: Get-EventLog -LogName Application -Source OsmUserWeb -Newest 10"
+        Write-Host ''
+        Write-Host '  Recent application event log entries:' -ForegroundColor Yellow
+        Get-EventLog -LogName Application -Source $ServiceName -Newest 10 `
+            -ErrorAction SilentlyContinue |
+            Select-Object TimeGenerated, EntryType, Message | Format-List
     }
 
     # -- Summary ---------------------------------------------------------------
