@@ -76,6 +76,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot  = $PSScriptRoot
 $webDir       = Join-Path $projectRoot 'src\DotNetWebServer'
 $projectFile  = Join-Path $webDir 'OsmUserWeb.csproj'
+$testProject  = Join-Path $projectRoot 'src\OsmUserWeb.Tests\OsmUserWeb.Tests.csproj'
 $publishDir   = Join-Path $webDir 'publish'
 $versionFile  = Join-Path $projectRoot 'version.json'
 
@@ -179,6 +180,14 @@ if ($Clean) {
         }
     }
 }
+
+# ── dotnet test ────────────────────────────────────────────────────────────────
+Write-Step "Running tests ($Configuration)"
+
+& dotnet test $testProject '--configuration' $Configuration
+Assert-ExitCode 'dotnet test'
+
+Write-Success 'All tests passed.'
 
 # ── dotnet publish ─────────────────────────────────────────────────────────────
 Write-Step "Publishing OsmUserWeb ($Configuration | $Runtime | self-contained: $($SelfContained.IsPresent))"
