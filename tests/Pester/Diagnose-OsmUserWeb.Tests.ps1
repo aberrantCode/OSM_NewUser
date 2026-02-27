@@ -111,7 +111,7 @@ Describe 'Healthy system - all checks pass' {
 
     BeforeAll {
         script:Set-HealthyMocks
-        & $script:ScriptPath -ServiceName OsmUserWeb -HttpsPort 8443 -InstallPath 'C:\Services\OsmUserWeb'
+        & $script:ScriptPath -ServiceName OsmUserWeb -HttpsPort 8443 -InstallPath 'C:\Services\OsmUserWeb' *>$null
     }
 
     It 'completes without throwing' {
@@ -182,7 +182,7 @@ Describe 'Service STOPPED - script runs to completion' {
 
         $script:threw = $false
         try {
-            & $script:ScriptPath -ServiceName OsmUserWeb -HttpsPort 8443 -InstallPath 'C:\Services\OsmUserWeb'
+            & $script:ScriptPath -ServiceName OsmUserWeb -HttpsPort 8443 -InstallPath 'C:\Services\OsmUserWeb' *>$null
         } catch {
             $script:threw = $true
         }
@@ -219,7 +219,7 @@ Describe 'Port not in registry - defaults to 8443' {
         $script:threw = $false
         try {
             # Do NOT pass -HttpsPort so auto-detect runs
-            & $script:ScriptPath -ServiceName OsmUserWeb -InstallPath 'C:\Services\OsmUserWeb'
+            & $script:ScriptPath -ServiceName OsmUserWeb -InstallPath 'C:\Services\OsmUserWeb' *>$null
         } catch {
             $script:threw = $true
         }
@@ -261,7 +261,7 @@ Describe 'No URL ACL - script still runs to completion' {
 
         $script:threw = $false
         try {
-            & $script:ScriptPath -ServiceName OsmUserWeb -HttpsPort 8443 -InstallPath 'C:\Services\OsmUserWeb'
+            & $script:ScriptPath -ServiceName OsmUserWeb -HttpsPort 8443 -InstallPath 'C:\Services\OsmUserWeb' *>$null
         } catch {
             $script:threw = $true
         }
@@ -303,7 +303,7 @@ Describe 'No SSL cert binding - script still runs to completion' {
 
         $script:threw = $false
         try {
-            & $script:ScriptPath -ServiceName OsmUserWeb -HttpsPort 8443 -InstallPath 'C:\Services\OsmUserWeb'
+            & $script:ScriptPath -ServiceName OsmUserWeb -HttpsPort 8443 -InstallPath 'C:\Services\OsmUserWeb' *>$null
         } catch {
             $script:threw = $true
         }
@@ -345,7 +345,7 @@ Describe 'Cert expired - script still runs to completion' {
 
         $script:threw = $false
         try {
-            & $script:ScriptPath -ServiceName OsmUserWeb -HttpsPort 8443 -InstallPath 'C:\Services\OsmUserWeb'
+            & $script:ScriptPath -ServiceName OsmUserWeb -HttpsPort 8443 -InstallPath 'C:\Services\OsmUserWeb' *>$null
         } catch {
             $script:threw = $true
         }
@@ -379,7 +379,7 @@ Describe 'No firewall rules - script still runs to completion' {
 
         $script:threw = $false
         try {
-            & $script:ScriptPath -ServiceName OsmUserWeb -HttpsPort 8443 -InstallPath 'C:\Services\OsmUserWeb'
+            & $script:ScriptPath -ServiceName OsmUserWeb -HttpsPort 8443 -InstallPath 'C:\Services\OsmUserWeb' *>$null
         } catch {
             $script:threw = $true
         }
@@ -413,7 +413,7 @@ Describe 'curl connection refused - script still runs to completion' {
 
         $script:threw = $false
         try {
-            & $script:ScriptPath -ServiceName OsmUserWeb -HttpsPort 8443 -InstallPath 'C:\Services\OsmUserWeb'
+            & $script:ScriptPath -ServiceName OsmUserWeb -HttpsPort 8443 -InstallPath 'C:\Services\OsmUserWeb' *>$null
         } catch {
             $script:threw = $true
         }
@@ -447,7 +447,7 @@ Describe 'curl.exe not found - Invoke-WebRequest fallback' {
 
         $script:threw = $false
         try {
-            & $script:ScriptPath -ServiceName OsmUserWeb -HttpsPort 8443 -InstallPath 'C:\Services\OsmUserWeb'
+            & $script:ScriptPath -ServiceName OsmUserWeb -HttpsPort 8443 -InstallPath 'C:\Services\OsmUserWeb' *>$null
         } catch {
             $script:threw = $true
         }

@@ -184,7 +184,7 @@ Describe 'Force uninstall - service registered' {
             return $true
         }
 
-        & $script:ScriptPath -InstallPath $script:InstallPath -Force
+        & $script:ScriptPath -InstallPath $script:InstallPath -Force *>$null
     }
 
     It 'stops the service via sc.exe stop' {
@@ -250,7 +250,7 @@ Describe 'Force uninstall - service not registered' {
             return $false
         }
 
-        & $script:ScriptPath -InstallPath $script:InstallPath -Force
+        & $script:ScriptPath -InstallPath $script:InstallPath -Force *>$null
     }
 
     It 'does NOT call sc.exe stop when service is not registered' {
@@ -283,7 +283,7 @@ Describe 'Force uninstall - install directory absent' {
             $LiteralPath -eq 'C:\FakeInstall\OsmUserWeb'
         }
 
-        & $script:ScriptPath -InstallPath 'C:\FakeInstall\OsmUserWeb' -Force
+        & $script:ScriptPath -InstallPath 'C:\FakeInstall\OsmUserWeb' -Force *>$null
     }
 
     It 'does NOT register a scheduled task when the install directory is absent' {
@@ -307,7 +307,7 @@ Describe 'No firewall rules to remove' {
             return $false
         }
 
-        & $script:ScriptPath -InstallPath $script:InstallPath -Force
+        & $script:ScriptPath -InstallPath $script:InstallPath -Force *>$null
     }
 
     It 'does NOT call Remove-NetFirewallRule when no rules are found' {
@@ -334,7 +334,7 @@ Describe '-RemoveServiceAccount - AD account found' {
             return $false
         }
 
-        & $script:ScriptPath -InstallPath $script:InstallPath -Force -RemoveServiceAccount
+        & $script:ScriptPath -InstallPath $script:InstallPath -Force -RemoveServiceAccount *>$null
     }
 
     It 'calls Remove-ADUser exactly once when the account is found' {
@@ -361,7 +361,7 @@ Describe '-RemoveServiceAccount - AD account not found' {
             return $false
         }
 
-        & $script:ScriptPath -InstallPath $script:InstallPath -Force -RemoveServiceAccount
+        & $script:ScriptPath -InstallPath $script:InstallPath -Force -RemoveServiceAccount *>$null
     }
 
     It 'does NOT call Remove-ADUser when the account does not exist' {
@@ -392,7 +392,7 @@ Describe '-RemoveCertificate - self-signed certificate is removed' {
             return $true
         }
 
-        & $script:ScriptPath -InstallPath $script:InstallPath -Force -RemoveCertificate
+        & $script:ScriptPath -InstallPath $script:InstallPath -Force -RemoveCertificate *>$null
     }
 
     It 'calls Remove-Item targeting the Cert:\LocalMachine store' {
@@ -424,7 +424,7 @@ Describe '-RemoveCertificate - CA-issued certificate is left in place' {
             return $true
         }
 
-        & $script:ScriptPath -InstallPath $script:InstallPath -Force -RemoveCertificate
+        & $script:ScriptPath -InstallPath $script:InstallPath -Force -RemoveCertificate *>$null
     }
 
     It 'does NOT call Remove-Item for the certificate store when cert is CA-issued' {
@@ -454,7 +454,7 @@ Describe 'User aborts at confirmation prompt' {
         # Capture any thrown exception for completeness.
         $script:threwOnAbort = $false
         try {
-            & $script:ScriptPath -InstallPath $script:InstallPath
+            & $script:ScriptPath -InstallPath $script:InstallPath *>$null
         } catch {
             $script:threwOnAbort = $true
         }
