@@ -209,7 +209,7 @@ Describe 'Happy path - service RUNNING, port from registry' {
         & $script:ScriptPath `
             -PublishPath $script:PublishPath `
             -InstallPath $script:InstallPath `
-            -Force
+            -Force *>$null
     }
 
     It 'calls sc.exe stop to stop the running service' {
@@ -264,7 +264,7 @@ Describe 'Explicit -HttpsPort supplied - registry not consulted' {
             -PublishPath $script:PublishPath `
             -InstallPath $script:InstallPath `
             -HttpsPort   9443 `
-            -Force
+            -Force *>$null
     }
 
     It 'does NOT call Get-ItemProperty when -HttpsPort is supplied' {
@@ -316,7 +316,7 @@ Describe 'Service already STOPPED - stop not called' {
         & $script:ScriptPath `
             -PublishPath $script:PublishPath `
             -InstallPath $script:InstallPath `
-            -Force
+            -Force *>$null
     }
 
     It 'does NOT call sc.exe stop when service is already STOPPED' {
@@ -348,7 +348,7 @@ Describe 'Publish path equals install path - no copy performed' {
         & $script:ScriptPath `
             -PublishPath $script:PublishPath `
             -InstallPath $script:PublishPath `
-            -Force
+            -Force *>$null
     }
 
     It 'does NOT call Copy-Item when publish path equals install path' {
@@ -380,7 +380,7 @@ Describe 'No SSL cert binding - sslcert not re-registered' {
         & $script:ScriptPath `
             -PublishPath $script:PublishPath `
             -InstallPath $script:InstallPath `
-            -Force
+            -Force *>$null
     }
 
     It 'does NOT call netsh add sslcert when no thumbprint was found' {
@@ -442,7 +442,7 @@ Describe 'Self-signed cert - stale duplicates are removed' {
         & $script:ScriptPath `
             -PublishPath $script:PublishPath `
             -InstallPath $script:InstallPath `
-            -Force
+            -Force *>$null
     }
 
     It 'calls Remove-Item targeting the Cert:\LocalMachine store to remove stale certs' {
@@ -479,7 +479,7 @@ Describe 'Service not registered - stops at Step 1' {
         & $script:ScriptPath `
             -PublishPath $script:PublishPath `
             -InstallPath $script:InstallPath `
-            -Force
+            -Force *>$null
     }
 
     It 'does NOT call sc.exe stop when the service is absent' {
@@ -515,7 +515,7 @@ Describe 'User aborts at confirmation - no changes made' {
         try {
             & $script:ScriptPath `
                 -PublishPath $script:PublishPath `
-                -InstallPath $script:InstallPath
+                -InstallPath $script:InstallPath *>$null
             # No -Force so Read-Host is called
         } catch {
             $script:threwOnAbort = $true

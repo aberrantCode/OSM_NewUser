@@ -189,7 +189,7 @@ Describe 'Username/password authentication' {
         }
     }
 
-    It 'sets Cookie header containing PVEAuthCookie=<ticket> on subsequent calls' {
+    It 'sets Cookie header containing PVEAuthCookie session ticket on subsequent calls' {
         # The create call (POST /qemu) should carry the cookie header
         Should -Invoke Invoke-RestMethod -Scope Describe -ParameterFilter {
             $Method -eq 'Post' -and $Uri -match '/qemu$' -and

@@ -378,7 +378,7 @@ Describe 'Full install - all skip flags set' {
     BeforeAll {
         script:Set-InstallMocks
 
-        & $script:ScriptPath @script:BaseParams
+        & $script:ScriptPath @script:BaseParams *>$null
     }
 
     It 'creates the install directory via New-Item' {
@@ -421,7 +421,7 @@ Describe 'SkipAdAccount - New-ADUser not called' {
     BeforeAll {
         script:Set-InstallMocks
 
-        & $script:ScriptPath @script:BaseParams
+        & $script:ScriptPath @script:BaseParams *>$null
     }
 
     It 'does NOT call New-ADUser when -SkipAdAccount is set' {
@@ -439,7 +439,7 @@ Describe 'AD account creation - New-ADUser called once' {
         $p = $script:BaseParams.Clone()
         $p['SkipAdAccount'] = $false
 
-        & $script:ScriptPath @p
+        & $script:ScriptPath @p *>$null
     }
 
     It 'calls New-ADUser exactly once to create the service account' {
@@ -460,7 +460,7 @@ Describe 'AD account already exists - New-ADUser not called' {
         $p = $script:BaseParams.Clone()
         $p['SkipAdAccount'] = $false
 
-        & $script:ScriptPath @p
+        & $script:ScriptPath @p *>$null
     }
 
     It 'does NOT call New-ADUser when the account already exists' {
@@ -479,7 +479,7 @@ Describe 'AD delegation - dsacls called when SkipAdDelegation is false' {
         $p['SkipAdAccount']    = $false   # account creation enabled
         $p['SkipAdDelegation'] = $false   # delegation enabled
 
-        & $script:ScriptPath @p
+        & $script:ScriptPath @p *>$null
     }
 
     It 'calls dsacls at least once to delegate OU permissions' {
@@ -505,7 +505,7 @@ Describe 'Target OU not found in AD — install aborted' {
         # The SUT catches the OU error internally and calls exit 1 — this does NOT
         # surface as a thrown exception when invoked with &; it simply terminates
         # the child scope (same behaviour as Scenario 10 / missing-exe test).
-        & $script:ScriptPath @p
+        & $script:ScriptPath @p *>$null
     }
 
     It 'does NOT call Copy-Item when the OU lookup fails' {
@@ -534,7 +534,7 @@ Describe '.NET runtime absent - winget installs it' {
             return '  Microsoft.AspNetCore.App 9.0.1 [C:\Program Files\dotnet]'
         }
 
-        & $script:ScriptPath @script:BaseParams
+        & $script:ScriptPath @script:BaseParams *>$null
     }
 
     It 'calls winget exactly once to install the .NET runtime' {
@@ -558,7 +558,7 @@ Describe 'Service already registered - sc.exe config used instead of create' {
             $global:LASTEXITCODE = 0; return ''
         }
 
-        & $script:ScriptPath @script:BaseParams
+        & $script:ScriptPath @script:BaseParams *>$null
     }
 
     It 'calls sc.exe config to reconfigure the existing service' {
@@ -584,7 +584,7 @@ Describe 'Firewall rules created when SkipFirewall is false' {
         $p = $script:BaseParams.Clone()
         $p['SkipFirewall'] = $false
 
-        & $script:ScriptPath @p
+        & $script:ScriptPath @p *>$null
     }
 
     It 'creates at least one firewall rule via New-NetFirewallRule' {
@@ -607,7 +607,7 @@ Describe 'PFX cert path — Import-PfxCertificate called' {
         $p['CertPfxPassword'] = 'PfxP@ss!'
 
         $script:pfxThrew = $false
-        try { & $script:ScriptPath @p }
+        try { & $script:ScriptPath @p *>$null }
         catch { $script:pfxThrew = $true }
     }
 
@@ -646,7 +646,7 @@ Describe 'CertSelfSigned - self-signed cert created and HTTP.sys URL ACL registe
         $p.Remove('SkipCertificate')
         $p['CertSelfSigned'] = $true
 
-        & $script:ScriptPath @p
+        & $script:ScriptPath @p *>$null
     }
 
     It 'calls New-SelfSignedCertificate exactly once' {
@@ -675,7 +675,7 @@ Describe 'OsmUserWeb.exe not in publish dir - no deployment steps run' {
         # The SUT throws and calls exit 1 inside its own catch block; when
         # invoked with & that terminates the child scope without surfacing a
         # thrown exception in the Pester host.
-        & $script:ScriptPath @p
+        & $script:ScriptPath @p *>$null
     }
 
     It 'does NOT call sc.exe create when the exe is missing from publish dir' {
@@ -706,7 +706,7 @@ Describe 'Domain WMI fallback when Get-ADDomain fails' {
 
         $script:threwOnFallback = $false
         try {
-            & $script:ScriptPath @script:BaseParams
+            & $script:ScriptPath @script:BaseParams *>$null
         } catch {
             $script:threwOnFallback = $true
         }
@@ -743,7 +743,7 @@ Describe 'Uninstall path - service stopped and bindings removed' {
             $global:LASTEXITCODE = 0; return ''
         }
 
-        & $script:ScriptPath -InstallPath $script:InstallPath -Uninstall
+        & $script:ScriptPath -InstallPath $script:InstallPath -Uninstall *>$null
     }
 
     It 'calls sc.exe stop during uninstall' {
@@ -775,7 +775,7 @@ Describe 'Uninstall aborted - no destructive actions taken' {
 
         $script:threwOnAbort = $false
         try {
-            & $script:ScriptPath -InstallPath $script:InstallPath -Uninstall
+            & $script:ScriptPath -InstallPath $script:InstallPath -Uninstall *>$null
         } catch {
             $script:threwOnAbort = $true
         }

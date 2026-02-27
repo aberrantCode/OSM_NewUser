@@ -18,7 +18,7 @@
      11. Verifies the created account via Get-ADUser -Identity.
 
     Invocation model:
-      - `& $script:ScriptPath -BaseName 'admin' -Password 'P@ss1'` runs the SUT.
+      - `& $script:ScriptPath -BaseName 'admin' -Password 'P@ss1' *>$null` runs the SUT.
       - The script uses `return` (not `exit`) for abort path — safe to invoke with &.
       - For throw paths the SUT is wrapped in try/catch and $script:thrownError captured.
       - SUT invoked ONCE per Describe in BeforeAll; It blocks assert only.
@@ -88,7 +88,7 @@ Describe 'BaseName derived from env:USERNAME by stripping trailing digits' {
             }
         }
 
-        & $script:ScriptPath -Password 'P@ss1'
+        & $script:ScriptPath -Password 'P@ss1' *>$null
     }
 
     AfterAll {
@@ -125,7 +125,7 @@ Describe 'Explicit -BaseName override creates correctly named account' {
             }
         }
 
-        & $script:ScriptPath -BaseName 'admin' -Password 'P@ss1'
+        & $script:ScriptPath -BaseName 'admin' -Password 'P@ss1' *>$null
     }
 
     It 'calls New-ADUser with SamAccountName derived from the supplied BaseName' {
@@ -162,7 +162,7 @@ Describe 'Empty base name throws with appropriate message' {
     }
 
     It 'throws Base name is empty when env:USERNAME is blank and no -BaseName supplied' {
-        { & $script:ScriptPath -Password 'P@ss1' } | Should -Throw '*Base name is empty*'
+        { & $script:ScriptPath -Password 'P@ss1' *>$null } | Should -Throw '*Base name is empty*'
     }
 }
 
@@ -185,7 +185,7 @@ Describe 'First account (no existing accounts creates baseName1)' {
             }
         }
 
-        & $script:ScriptPath -BaseName 'newadm' -Password 'P@ss1'
+        & $script:ScriptPath -BaseName 'newadm' -Password 'P@ss1' *>$null
     }
 
     It 'creates <baseName>1 when no existing accounts exist' {
@@ -222,7 +222,7 @@ Describe 'Next account number computed correctly when existing accounts found' {
             }
         }
 
-        & $script:ScriptPath -BaseName 'admin' -Password 'P@ss1'
+        & $script:ScriptPath -BaseName 'admin' -Password 'P@ss1' *>$null
     }
 
     It 'creates admin4 when admin1 through admin3 already exist' {
@@ -256,7 +256,7 @@ Describe 'User presses N at confirmation prompt - account creation aborted' {
             return [PSCustomObject]@{ SamAccountName = 'admin1' }
         }
 
-        & $script:ScriptPath -BaseName 'admin' -Password 'P@ss1'
+        & $script:ScriptPath -BaseName 'admin' -Password 'P@ss1' *>$null
     }
 
     It 'does NOT call New-ADUser when user declines confirmation' {
@@ -295,7 +295,7 @@ Describe 'Full happy path - all steps execute successfully' {
             }
         }
 
-        & $script:ScriptPath -BaseName 'admin' -Password 'P@ss1'
+        & $script:ScriptPath -BaseName 'admin' -Password 'P@ss1' *>$null
     }
 
     It 'calls Import-Module once' {
@@ -355,7 +355,7 @@ Describe 'Set-ADUser failure is non-fatal - Add-ADGroupMember still called' {
 
         $script:thrownError = $null
         try {
-            & $script:ScriptPath -BaseName 'admin' -Password 'P@ss1'
+            & $script:ScriptPath -BaseName 'admin' -Password 'P@ss1' *>$null
         } catch {
             $script:thrownError = $_.Exception.Message
         }
@@ -408,7 +408,7 @@ Describe 'Add-ADGroupMember failure is non-fatal - verify Get-ADUser still calle
 
         $script:thrownError = $null
         try {
-            & $script:ScriptPath -BaseName 'admin' -Password 'P@ss1'
+            & $script:ScriptPath -BaseName 'admin' -Password 'P@ss1' *>$null
         } catch {
             $script:thrownError = $_.Exception.Message
         }
@@ -444,7 +444,7 @@ Describe 'Import-Module failure throws and halts script' {
 
         $script:thrownError = $null
         try {
-            & $script:ScriptPath -BaseName 'admin' -Password 'P@ss1'
+            & $script:ScriptPath -BaseName 'admin' -Password 'P@ss1' *>$null
         } catch {
             $script:thrownError = $_.Exception.Message
         }
@@ -474,7 +474,7 @@ Describe 'Get-ADOrganizationalUnit failure throws and halts script' {
 
         $script:thrownError = $null
         try {
-            & $script:ScriptPath -BaseName 'admin' -Password 'P@ss1'
+            & $script:ScriptPath -BaseName 'admin' -Password 'P@ss1' *>$null
         } catch {
             $script:thrownError = $_.Exception.Message
         }
@@ -511,7 +511,7 @@ Describe 'New-ADUser already exists error is re-thrown' {
 
         $script:thrownError = $null
         try {
-            & $script:ScriptPath -BaseName 'admin' -Password 'P@ss1'
+            & $script:ScriptPath -BaseName 'admin' -Password 'P@ss1' *>$null
         } catch {
             $script:thrownError = $_.Exception.Message
         }

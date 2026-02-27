@@ -204,7 +204,13 @@ $pesterCfg.Run.Path      = $pesterDir
 $pesterCfg.Run.PassThru  = $true
 $pesterCfg.Output.Verbosity = 'Normal'
 
+# Suspend strict mode while Pester runs: Pester 5 evaluates It-block name
+# templates (e.g. <paramName>) by expanding $paramName from scope.  Under
+# Set-StrictMode -Version Latest any undefined variable throws instead of
+# returning $null, which breaks tests that have angle-bracket text in names.
+Set-StrictMode -Off
 $pesterResult = Invoke-Pester -Configuration $pesterCfg
+Set-StrictMode -Version Latest
 
 if ($pesterResult.FailedCount -gt 0) {
     Write-Error "Pester: $($pesterResult.FailedCount) test(s) failed. Build aborted."

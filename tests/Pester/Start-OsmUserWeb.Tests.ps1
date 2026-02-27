@@ -12,7 +12,7 @@
       4. Calls Push-Location / dotnet run / Pop-Location (in try/finally).
 
     Invocation model:
-      - `& $script:ScriptPath -NoBrowser` runs the SUT in a child scope.
+      - `& $script:ScriptPath -NoBrowser *>$null` runs the SUT in a child scope.
         The script has NO `exit` statements, so the Pester host is unaffected.
       - Pester mocks registered in BeforeAll are active when & runs.
       - The SUT is invoked ONCE per Describe in BeforeAll; It blocks assert only.
@@ -54,7 +54,7 @@ Describe 'SDK found - happy path' {
         Mock Pop-Location {}
         Mock Start-Job { return [PSCustomObject]@{ Id = 1; State = 'Running' } }
 
-        & $script:ScriptPath -NoBrowser
+        & $script:ScriptPath -NoBrowser *>$null
     }
 
     It 'calls dotnet --list-sdks to check for the SDK' {
@@ -97,7 +97,7 @@ Describe '-NoBrowser flag suppresses browser launch' {
         Mock Pop-Location {}
         Mock Start-Job { return [PSCustomObject]@{ Id = 1; State = 'Running' } }
 
-        & $script:ScriptPath -NoBrowser
+        & $script:ScriptPath -NoBrowser *>$null
     }
 
     It 'does NOT call Start-Job when -NoBrowser is specified' {
@@ -120,7 +120,7 @@ Describe 'No -NoBrowser flag launches browser job' {
         Mock Pop-Location {}
         Mock Start-Job { return [PSCustomObject]@{ Id = 1; State = 'Running' } }
 
-        & $script:ScriptPath
+        & $script:ScriptPath *>$null
     }
 
     It 'calls Start-Job exactly once to schedule the browser open' {
@@ -158,7 +158,7 @@ Describe 'SDK absent - winget installs successfully' {
 
         $script:thrownError = $null
         try {
-            & $script:ScriptPath -NoBrowser
+            & $script:ScriptPath -NoBrowser *>$null
         } catch {
             $script:thrownError = $_.Exception.Message
         }
@@ -210,7 +210,7 @@ Describe 'SDK absent - winget not found on machine' {
 
         $script:thrownError = $null
         try {
-            & $script:ScriptPath -NoBrowser
+            & $script:ScriptPath -NoBrowser *>$null
         } catch {
             $script:thrownError = $_.Exception.Message
         }
@@ -254,7 +254,7 @@ Describe 'SDK absent - winget install fails with non-zero exit code' {
 
         $script:thrownError = $null
         try {
-            & $script:ScriptPath -NoBrowser
+            & $script:ScriptPath -NoBrowser *>$null
         } catch {
             $script:thrownError = $_.Exception.Message
         }
