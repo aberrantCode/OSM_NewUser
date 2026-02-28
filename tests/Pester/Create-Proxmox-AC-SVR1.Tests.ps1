@@ -80,7 +80,7 @@ BeforeAll {
         try {
             Set-Content -Path $tmpFile -Value $script:PatchedScriptText -Encoding UTF8
             $ErrorActionPreference = 'SilentlyContinue'
-            & $tmpFile @Params 2>$null
+            & $tmpFile @Params *>$null
             return $LASTEXITCODE
         } finally {
             Remove-Item -Path $tmpFile -Force -ErrorAction SilentlyContinue
