@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using OsmUserWeb.Models;
 using OsmUserWeb.Services;
 using Xunit;
@@ -25,6 +26,10 @@ sealed class OsmUserWebFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+
+        // Suppress "Now listening on: ..." startup noise in the build log.
+        builder.ConfigureLogging(logging =>
+            logging.AddFilter("Microsoft.Hosting.Lifetime", LogLevel.Warning));
 
         builder.ConfigureServices(services =>
         {
