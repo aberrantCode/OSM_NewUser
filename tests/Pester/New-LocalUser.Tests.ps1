@@ -216,6 +216,10 @@ Describe '.env file present — blank Read-Host response uses env password' {
             $Message -match '\.env file found'
         }
     }
+
+    It 'calls New-LocalUser once (password sourced from .env)' {
+        Should -Invoke New-LocalUser -Times 1 -Exactly -Scope Describe
+    }
 }
 
 # ── Scenario 3: No .env file — blank loops until password entered ─────────────
@@ -246,6 +250,10 @@ Describe 'No .env file — blank password prompt loops until value entered' {
         Should -Invoke Write-SpectreHost -Scope Describe -ParameterFilter {
             $Message -match 'cannot be blank'
         }
+    }
+
+    It 'calls New-LocalUser after user eventually provides a password' {
+        Should -Invoke New-LocalUser -Times 1 -Exactly -Scope Describe
     }
 }
 
@@ -284,6 +292,10 @@ Describe 'Password confirm mismatch causes re-prompt until passwords match' {
         Should -Invoke Write-SpectreHost -Scope Describe -ParameterFilter {
             $Message -match 'do not match'
         }
+    }
+
+    It 'eventually calls New-LocalUser after mismatch is resolved' {
+        Should -Invoke New-LocalUser -Times 1 -Exactly -Scope Describe
     }
 }
 
