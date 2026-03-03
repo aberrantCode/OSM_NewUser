@@ -33,7 +33,7 @@
 #>
 
 BeforeAll {
-    $script:ScriptPath = Join-Path $PSScriptRoot '..\..\src\DotNetWebServer\Start-OsmUserWeb.ps1'
+    $script:ScriptPath = Join-Path $PSScriptRoot '..\..\src\DotNet-DomainWebServer\Start-OsmUserWeb.ps1'
 }
 
 # ── Scenario 1 : SDK found ────────────────────────────────────────────────────

@@ -81,7 +81,7 @@ dsacls $groupDN /G "${identity}:WP;member"
 
 PowerShell (build machine):
 ```powershell
-cd src/DotNetWebServer
+cd src/DotNet-DomainWebServer
 dotnet publish OsmUserWeb.csproj --configuration Release --runtime win-x64 --self-contained false --output ./publish
 ```
 

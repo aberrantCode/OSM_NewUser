@@ -51,7 +51,7 @@
 #>
 
 BeforeAll {
-    $script:ScriptPath  = Join-Path $PSScriptRoot '..\..\src\DotNetWebServer\Update-OsmUserWeb.ps1'
+    $script:ScriptPath  = Join-Path $PSScriptRoot '..\..\src\DotNet-DomainWebServer\Update-OsmUserWeb.ps1'
     $script:InstallPath = 'C:\FakeInstall\OsmUserWeb'
 
     # Create a real publish directory in TestDrive so Resolve-Path and

@@ -19,7 +19,7 @@
       PATCH        — git rev-list --count HEAD  (increments automatically with every commit)
       +SHA         — short commit hash appended to InformationalVersion for traceability
 
-    See the "Versioning" section of src/DotNetWebServer/README.md for full details.
+    See the "Versioning" section of src/DotNet-DomainWebServer/README.md for full details.
 
 .PARAMETER Configuration
     Build configuration. Default: Release
@@ -74,7 +74,7 @@ $ErrorActionPreference = 'Stop'
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 $projectRoot  = $PSScriptRoot
-$webDir       = Join-Path $projectRoot 'src\DotNetWebServer'
+$webDir       = Join-Path $projectRoot 'src\DotNet-DomainWebServer'
 $projectFile  = Join-Path $webDir 'OsmUserWeb.csproj'
 $testProject  = Join-Path $projectRoot 'src\OsmUserWeb.Tests\OsmUserWeb.Tests.csproj'
 $publishDir   = Join-Path $webDir 'publish'

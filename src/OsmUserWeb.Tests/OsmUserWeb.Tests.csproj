@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\DotNetWebServer\OsmUserWeb.csproj" />
+    <ProjectReference Include="..\DotNet-DomainWebServer\OsmUserWeb.csproj" />
   </ItemGroup>
 
 </Project>

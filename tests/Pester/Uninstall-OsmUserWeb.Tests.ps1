@@ -41,7 +41,7 @@
 #>
 
 BeforeAll {
-    $script:ScriptPath  = Join-Path $PSScriptRoot '..\..\src\DotNetWebServer\Uninstall-OsmUserWeb.ps1'
+    $script:ScriptPath  = Join-Path $PSScriptRoot '..\..\src\DotNet-DomainWebServer\Uninstall-OsmUserWeb.ps1'
     $script:InstallPath = 'C:\FakeInstall\OsmUserWeb'
 
     # ------------------------------------------------------------------

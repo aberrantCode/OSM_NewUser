@@ -12,12 +12,12 @@
 
 | Script | Lines | Path |
 |--------|-------|------|
-| ScriptHelpers.ps1 | 27 | src/DotNetWebServer/ |
-| Install-OsmUserWeb.ps1 | 919 | src/DotNetWebServer/ |
-| Uninstall-OsmUserWeb.ps1 | 277 | src/DotNetWebServer/ |
-| Update-OsmUserWeb.ps1 | 334 | src/DotNetWebServer/ |
-| Diagnose-OsmUserWeb.ps1 | 417 | src/DotNetWebServer/ |
-| Start-OsmUserWeb.ps1 | 80 | src/DotNetWebServer/ |
+| ScriptHelpers.ps1 | 27 | src/DotNet-DomainWebServer/ |
+| Install-OsmUserWeb.ps1 | 919 | src/DotNet-DomainWebServer/ |
+| Uninstall-OsmUserWeb.ps1 | 277 | src/DotNet-DomainWebServer/ |
+| Update-OsmUserWeb.ps1 | 334 | src/DotNet-DomainWebServer/ |
+| Diagnose-OsmUserWeb.ps1 | 417 | src/DotNet-DomainWebServer/ |
+| Start-OsmUserWeb.ps1 | 80 | src/DotNet-DomainWebServer/ |
 | New-OSMUser.ps1 | 207 | src/PwshScript/ |
 | Create-Proxmox-AC-SVR1.ps1 | 132 | src/PwshScript/ |
 
@@ -25,7 +25,7 @@
 
 - `Install-OsmUserWeb-Remote.ps1` — orchestrates via PS Remoting; all logic delegated to Install-OsmUserWeb.ps1 (already covered)
 - `Uninstall-OsmUserWeb-Remote.ps1` — same rationale
-- `dist/` scripts — byte-for-byte copies of `src/DotNetWebServer/` scripts
+- `dist/` scripts — byte-for-byte copies of `src/DotNet-DomainWebServer/` scripts
 
 ---
 

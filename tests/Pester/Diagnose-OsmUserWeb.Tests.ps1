@@ -41,7 +41,7 @@
 #>
 
 BeforeAll {
-    $script:ScriptPath = Join-Path $PSScriptRoot '..\..\src\DotNetWebServer\Diagnose-OsmUserWeb.ps1'
+    $script:ScriptPath = Join-Path $PSScriptRoot '..\..\src\DotNet-DomainWebServer\Diagnose-OsmUserWeb.ps1'
 
     # Always mock these to suppress side-effects
     Mock Start-Transcript { }

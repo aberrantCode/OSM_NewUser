@@ -60,7 +60,7 @@
 #>
 
 BeforeAll {
-    $script:ScriptPath  = Join-Path $PSScriptRoot '..\..\src\DotNetWebServer\Install-OsmUserWeb.ps1'
+    $script:ScriptPath  = Join-Path $PSScriptRoot '..\..\src\DotNet-DomainWebServer\Install-OsmUserWeb.ps1'
     $script:InstallPath = 'C:\FakeInstall\OsmUserWeb'
     $script:TargetOU    = 'OU=AdminAccounts,DC=opbta,DC=local'
 

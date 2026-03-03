@@ -267,7 +267,7 @@ git commit -m "test: add Pester tests for Create-Proxmox-AC-SVR1.ps1 (~90% cover
 
 **Files:**
 - Create: `tests/Pester/Start-OsmUserWeb.Tests.ps1`
-- Source: `src/DotNetWebServer/Start-OsmUserWeb.ps1`
+- Source: `src/DotNet-DomainWebServer/Start-OsmUserWeb.ps1`
 
 **Step 1: Create the test file**
 
@@ -281,7 +281,7 @@ git commit -m "test: add Pester tests for Create-Proxmox-AC-SVR1.ps1 (~90% cover
 #>
 
 BeforeAll {
-    $Script:ScriptPath = Resolve-Path "$PSScriptRoot\..\..\src\DotNetWebServer\Start-OsmUserWeb.ps1"
+    $Script:ScriptPath = Resolve-Path "$PSScriptRoot\..\..\src\DotNet-DomainWebServer\Start-OsmUserWeb.ps1"
 }
 
 # ── .NET 9 SDK already installed ──────────────────────────────────────────────
@@ -645,7 +645,7 @@ git commit -m "test: add Pester tests for New-OSMUser.ps1 (~92% coverage)"
 
 **Files:**
 - Create: `tests/Pester/Diagnose-OsmUserWeb.Tests.ps1`
-- Source: `src/DotNetWebServer/Diagnose-OsmUserWeb.ps1`
+- Source: `src/DotNet-DomainWebServer/Diagnose-OsmUserWeb.ps1`
 
 **Step 1: Create the test file**
 
@@ -660,7 +660,7 @@ git commit -m "test: add Pester tests for New-OSMUser.ps1 (~92% coverage)"
 #>
 
 BeforeAll {
-    $Script:ScriptPath = Resolve-Path "$PSScriptRoot\..\..\src\DotNetWebServer\Diagnose-OsmUserWeb.ps1"
+    $Script:ScriptPath = Resolve-Path "$PSScriptRoot\..\..\src\DotNet-DomainWebServer\Diagnose-OsmUserWeb.ps1"
 
     # Suppress transcript side-effects
     Mock Start-Transcript { }
@@ -972,7 +972,7 @@ git commit -m "test: add Pester tests for Diagnose-OsmUserWeb.ps1 (~90% coverage
 
 **Files:**
 - Create: `tests/Pester/Uninstall-OsmUserWeb.Tests.ps1`
-- Source: `src/DotNetWebServer/Uninstall-OsmUserWeb.ps1`
+- Source: `src/DotNet-DomainWebServer/Uninstall-OsmUserWeb.ps1`
 
 **Step 1: Create the test file**
 
@@ -987,7 +987,7 @@ git commit -m "test: add Pester tests for Diagnose-OsmUserWeb.ps1 (~90% coverage
 #>
 
 BeforeAll {
-    $Script:ScriptPath = Resolve-Path "$PSScriptRoot\..\..\src\DotNetWebServer\Uninstall-OsmUserWeb.ps1"
+    $Script:ScriptPath = Resolve-Path "$PSScriptRoot\..\..\src\DotNet-DomainWebServer\Uninstall-OsmUserWeb.ps1"
     $Script:InstallPath = 'C:\FakeInstall\OsmUserWeb'
 
     # Default set of mocks for a "clean" uninstall scenario
@@ -1230,7 +1230,7 @@ git commit -m "test: add Pester tests for Uninstall-OsmUserWeb.ps1 (~92% coverag
 
 **Files:**
 - Create: `tests/Pester/Update-OsmUserWeb.Tests.ps1`
-- Source: `src/DotNetWebServer/Update-OsmUserWeb.ps1`
+- Source: `src/DotNet-DomainWebServer/Update-OsmUserWeb.ps1`
 
 **Step 1: Create the test file**
 
@@ -1244,7 +1244,7 @@ git commit -m "test: add Pester tests for Uninstall-OsmUserWeb.ps1 (~92% coverag
 #>
 
 BeforeAll {
-    $Script:ScriptPath  = Resolve-Path "$PSScriptRoot\..\..\src\DotNetWebServer\Update-OsmUserWeb.ps1"
+    $Script:ScriptPath  = Resolve-Path "$PSScriptRoot\..\..\src\DotNet-DomainWebServer\Update-OsmUserWeb.ps1"
     $Script:InstallPath = 'C:\FakeInstall\OsmUserWeb'
 
     # Create a fake publish directory with OsmUserWeb.exe in TestDrive
@@ -1525,7 +1525,7 @@ The most complex script. 13 installation steps + uninstall path.
 
 **Files:**
 - Create: `tests/Pester/Install-OsmUserWeb.Tests.ps1`
-- Source: `src/DotNetWebServer/Install-OsmUserWeb.ps1`
+- Source: `src/DotNet-DomainWebServer/Install-OsmUserWeb.ps1`
 
 **Step 1: Create the test file**
 
@@ -1540,7 +1540,7 @@ The most complex script. 13 installation steps + uninstall path.
 #>
 
 BeforeAll {
-    $Script:ScriptPath  = Resolve-Path "$PSScriptRoot\..\..\src\DotNetWebServer\Install-OsmUserWeb.ps1"
+    $Script:ScriptPath  = Resolve-Path "$PSScriptRoot\..\..\src\DotNet-DomainWebServer\Install-OsmUserWeb.ps1"
     $Script:InstallPath = 'C:\FakeInstall\OsmUserWeb'
     $Script:TargetOU    = 'OU=AdminAccounts,DC=opbta,DC=local'
 

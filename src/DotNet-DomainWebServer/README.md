@@ -63,7 +63,7 @@ See [`Uninstall-OsmUserWeb.ps1`](Uninstall-OsmUserWeb.ps1) for the full paramete
 ## Build and Run
 
 ```powershell
-cd src/DotNetWebServer
+cd src/DotNet-DomainWebServer
 dotnet run
 ```
 
@@ -228,7 +228,7 @@ Every account created has the same properties as the PowerShell script:
 ## Project Structure
 
 ```
-src/DotNetWebServer/
+src/DotNet-DomainWebServer/
 ├── OsmUserWeb.csproj          # .NET 9 web project
 ├── Program.cs                 # Minimal API entry point and route definitions
 ├── appsettings.json           # Configuration (AD settings, logging)

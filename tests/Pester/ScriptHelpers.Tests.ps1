@@ -6,7 +6,7 @@
 
 # Dot-source the module under test so its functions are available in this scope.
 BeforeAll {
-    . (Join-Path $PSScriptRoot '..\..\src\DotNetWebServer\ScriptHelpers.ps1')
+    . (Join-Path $PSScriptRoot '..\..\src\DotNet-DomainWebServer\ScriptHelpers.ps1')
 }
 
 # ── Read-WithDefault ─────────────────────────────────────────────────────────
