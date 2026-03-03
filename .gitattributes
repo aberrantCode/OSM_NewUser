@@ -6,12 +6,13 @@
 # causing cascading parse errors.  The BOM (EF BB BF) prevents this entirely.
 *.ps1 text working-tree-encoding=UTF-8 eol=crlf
 
-# Bash hook scripts must always use LF (CRLF breaks bash on Linux/macOS/CI)
-hooks/*  text eol=lf
-
 # All other text files: LF in the repo, CRLF on Windows checkout
 *     text=auto eol=crlf
 *.md  text eol=crlf
 *.json text eol=crlf
 *.csproj text eol=crlf
 *.sln  text eol=crlf
+
+# Bash hook scripts must always use LF (CRLF breaks bash on Linux/macOS/CI)
+# This rule must come LAST so it overrides the catch-all eol=crlf above.
+hooks/*  text eol=lf
