@@ -30,3 +30,6 @@ src/DotNet-DomainWebServer/publish/**
 # Build script outputs
 dist/
 OsmUserWeb-*.zip
+
+# Local secrets — never commit
+.env
