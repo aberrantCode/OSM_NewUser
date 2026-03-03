@@ -162,13 +162,12 @@ Write-SpectreRule -Title 'Confirm'
 
 $summaryObject = [PSCustomObject]@{
     Username                 = $username
-    PasswordNeverExpires     = 'True'
-    UserMayNotChangePassword = 'True'
+    PasswordNeverExpires     = $true
+    UserMayNotChangePassword = $true
     Group                    = 'Administrators'
     Computer                 = $env:COMPUTERNAME
 }
 
-Format-SpectreTable -Data $summaryObject
 Format-SpectrePanel -Header 'New User Summary' -Data $summaryObject
 
 $confirmed = Read-SpectreConfirm -Message 'Create this user?'
@@ -188,7 +187,7 @@ Invoke-SpectreCommandWithStatus -Title 'Creating local user...' -ScriptBlock {
         -UserMayNotChangePassword:$true
 
     Add-LocalGroupMember -Group 'Administrators' -Member $createUsername
-} -Spinner dots
+} -Spinner Dots
 
 # (Phase 6 continues below — implemented in Task 7)
 throw 'Phase 6 not yet implemented'

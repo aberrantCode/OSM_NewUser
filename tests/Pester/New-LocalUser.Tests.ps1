@@ -397,6 +397,7 @@ Describe 'Happy path — all steps succeed, user declines auto-logon' {
 
     It 'calls Add-LocalGroupMember for the Administrators group' {
         Should -Invoke Add-LocalGroupMember -Times 1 -Exactly -Scope Describe -ParameterFilter {
+            # String interpolation converts LocalGroup/LocalPrincipal objects to comparable strings
             "$Group" -eq 'Administrators' -and "$Member" -eq 'newadm1'
         }
     }
