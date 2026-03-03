@@ -189,5 +189,32 @@ Invoke-SpectreCommandWithStatus -Title 'Creating local user...' -ScriptBlock {
     Add-LocalGroupMember -Group 'Administrators' -Member $createUsername
 } -Spinner Dots
 
-# (Phase 6 continues below — implemented in Task 7)
-throw 'Phase 6 not yet implemented'
+# ── Phase 6: Verification ─────────────────────────────────────────────────────
+Write-SpectreRule -Title 'Verification'
+
+$verifiedUser  = Get-LocalUser -Name $username
+$groupMembers  = Get-LocalGroupMember -Group 'Administrators'
+$isMember      = $groupMembers | Where-Object { $_.Name -like "*$username" }
+
+[PSCustomObject]@{
+    Name                     = $verifiedUser.Name
+    Enabled                  = $verifiedUser.Enabled
+    PasswordNeverExpires     = $verifiedUser.PasswordNeverExpires
+    UserMayNotChangePassword = $verifiedUser.UserMayNotChangePassword
+    'Member of Administrators' = if ($isMember) { 'Yes' } else { 'No' }
+} | Format-SpectreTable
+
+# ── Phase 7: Auto-logon offer ─────────────────────────────────────────────────
+$logon = Read-SpectreConfirm -Message "Log on as '$username' now?"
+if ($logon) {
+    $plainPassword = ConvertTo-PlainText -SecureString $securePassword
+    $regPath = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+    Set-ItemProperty -Path $regPath -Name 'AutoAdminLogon'    -Value '1'
+    Set-ItemProperty -Path $regPath -Name 'DefaultUserName'   -Value $username
+    Set-ItemProperty -Path $regPath -Name 'DefaultDomainName' -Value $env:COMPUTERNAME
+    Set-ItemProperty -Path $regPath -Name 'DefaultPassword'   -Value $plainPassword
+    Set-ItemProperty -Path $regPath -Name 'AutoLogonCount'    -Value '1'
+    $plainPassword = $null  # clear the reference
+    Write-SpectreHost '[grey]Auto-logon configured (one-time). Logging off now...[/]'
+    Invoke-Logoff
+}
