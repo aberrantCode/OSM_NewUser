@@ -45,6 +45,18 @@
 BeforeAll {
     $script:ScriptPath = Join-Path $PSScriptRoot '..\..\src\Pwsh-NewLocalUser\New-LocalUser.ps1'
 
+    # ── Load PwshSpectreConsole so Spectre cmdlets exist for mocking ──────────
+    $OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+    $env:IgnoreSpectreEncoding = $true
+    Import-Module PwshSpectreConsole -ErrorAction Stop
+
+    # ── Stub SUT-internal functions so Pester can mock them ───────────────────
+    # Pester requires the command to exist at mock-registration time.
+    # These stubs are overridden per-Describe in Set-CommonLocalUserMocks.
+    function Test-IsElevated { return $true }
+    function Get-EnvFilePath { return $null }
+    function Invoke-Logoff   { }
+
     # ── Shared temp .env helpers ──────────────────────────────────────────────
     function script:New-TempEnvFile {
         param([string]$Password = 'EnvP@ssw0rd')
