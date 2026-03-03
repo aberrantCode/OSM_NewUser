@@ -135,5 +135,27 @@ while ($null -eq $securePassword) {
     }
 }
 
-# (Phase 3 continues below — implemented in Task 5)
-throw 'Phase 3 not yet implemented'
+# ── Phase 3: Username resolution ─────────────────────────────────────────────
+Write-SpectreRule -Title 'Username'
+
+$baseName  = Get-BaseName
+$suggested = Get-NextUsername -BaseName $baseName
+
+$username = $null
+while ($null -eq $username) {
+    $rawInput = Read-SpectreText -Message 'Username' -DefaultAnswer $suggested
+    $trimmed  = $rawInput.Trim()
+    if ([string]::IsNullOrWhiteSpace($trimmed)) {
+        Write-SpectreHost '[red]Username cannot be blank.[/]'
+        continue
+    }
+    $existing = try { Get-LocalUser -Name $trimmed -ErrorAction Stop } catch { $null }
+    if ($null -ne $existing) {
+        Write-SpectreHost "[red]'$trimmed' is already in use. Choose a different username.[/]"
+        continue
+    }
+    $username = $trimmed
+}
+
+# (Phase 4 continues below — implemented in Task 6)
+throw 'Phase 4 not yet implemented'

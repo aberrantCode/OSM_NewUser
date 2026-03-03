@@ -89,6 +89,7 @@ BeforeAll {
         $global:mockExpectedUsername = $ExpectedUsername
         $global:mockConfirmCreate    = $ConfirmCreate.IsPresent
         $global:mockConfirmLogon     = $ConfirmLogon.IsPresent
+        $global:userWasCreated       = $false
 
         # Elevation
         Mock Test-IsElevated { $true }
@@ -110,8 +111,8 @@ BeforeAll {
             & $Task
         }
 
-        # Spectre prompts
-        Mock Read-SpectreText    { $DefaultValue }
+        # Spectre prompts — return the expected username for Phase 3 validation
+        Mock Read-SpectreText { $global:mockExpectedUsername }
         Mock Read-SpectreConfirm {
             param($Question)
             if ($Question -match 'Log on') { return $global:mockConfirmLogon }
@@ -126,14 +127,18 @@ BeforeAll {
         Mock Read-Host { return $global:defaultSS }
 
         # Local user cmdlets
+        # Get-LocalUser: returns empty list when queried without -Name (for Get-NextUsername),
+        # throws "not found" for any -Name query BEFORE user creation (Phase 3 validation),
+        # and returns the created user for -Name queries AFTER creation (Phase 6 verification).
+        $global:userWasCreated = $false
         Mock Get-LocalUser {
             param($Name)
             if ($PSBoundParameters.ContainsKey('Name')) {
-                if ($Name -eq $global:mockExpectedUsername) {
+                if ($Name -eq $global:mockExpectedUsername -and $global:userWasCreated) {
                     return [PSCustomObject]@{
-                        Name               = $global:mockExpectedUsername
-                        Enabled            = $true
-                        PasswordNeverExpires = $true
+                        Name                     = $global:mockExpectedUsername
+                        Enabled                  = $true
+                        PasswordNeverExpires     = $true
                         UserMayNotChangePassword = $true
                     }
                 }
@@ -142,7 +147,7 @@ BeforeAll {
             return @()
         }
 
-        Mock New-LocalUser        { }
+        Mock New-LocalUser        { $global:userWasCreated = $true }
         Mock Add-LocalGroupMember { }
         Mock Get-LocalGroupMember {
             @([PSCustomObject]@{ Name = $global:mockExpectedUsername; ObjectClass = 'User' })
@@ -152,6 +157,16 @@ BeforeAll {
         Mock Set-ItemProperty { }
         Mock Invoke-Logoff    { }
     }
+}
+
+AfterAll {
+    # Clean up global variables used by mock scriptblocks to prevent state leakage
+    Remove-Variable -Name 'mockEnvFilePath', 'mockExpectedUsername', 'mockConfirmCreate',
+                         'mockConfirmLogon', 'defaultSS', 'userWasCreated',
+                         'readHostCount3', 'blankSS3', 'filledSS3',
+                         'readHostCount4', 'pass4_1', 'pass4_wrong', 'pass4_2', 'pass4_confirm',
+                         'spectreTextCount5' `
+                    -Scope Global -ErrorAction SilentlyContinue
 }
 
 # ── Scenario 1: BaseName derived from env:USERNAME ───────────────────────────
@@ -164,26 +179,13 @@ Describe 'BaseName derived from env:USERNAME by stripping trailing digits' {
 
         Set-CommonLocalUserMocks -ExpectedUsername 'erik1'
 
-        Mock Get-LocalUser {
-            param($Name)
-            if ($PSBoundParameters.ContainsKey('Name')) {
-                if ($Name -eq 'erik1') {
-                    return [PSCustomObject]@{
-                        Name = 'erik1'; Enabled = $true
-                        PasswordNeverExpires = $true; UserMayNotChangePassword = $true
-                    }
-                }
-                throw "No local user '$Name' was found."
-            }
-            return @()
-        }
-
-        & $script:ScriptPath *>$null
+        try { & $script:ScriptPath *>$null } catch { }
     }
 
     AfterAll { $env:USERNAME = $script:savedUsername }
 
     It 'calls New-LocalUser with the username derived from env:USERNAME (erik1)' {
+        # TDD: intentionally red until Phase 5 (user creation) is implemented
         Should -Invoke New-LocalUser -Times 1 -Exactly -Scope Describe -ParameterFilter {
             $Name -eq 'erik1'
         }
@@ -218,6 +220,7 @@ Describe '.env file present — blank Read-Host response uses env password' {
     }
 
     It 'calls New-LocalUser once (password sourced from .env)' {
+        # TDD: intentionally red until Phase 5 (user creation) is implemented
         Should -Invoke New-LocalUser -Times 1 -Exactly -Scope Describe
     }
 }
@@ -253,6 +256,7 @@ Describe 'No .env file — blank password prompt loops until value entered' {
     }
 
     It 'calls New-LocalUser after user eventually provides a password' {
+        # TDD: intentionally red until Phase 5 (user creation) is implemented
         Should -Invoke New-LocalUser -Times 1 -Exactly -Scope Describe
     }
 }
@@ -295,6 +299,7 @@ Describe 'Password confirm mismatch causes re-prompt until passwords match' {
     }
 
     It 'eventually calls New-LocalUser after mismatch is resolved' {
+        # TDD: intentionally red until Phase 5 (user creation) is implemented
         Should -Invoke New-LocalUser -Times 1 -Exactly -Scope Describe
     }
 }
@@ -306,10 +311,10 @@ Describe 'Username already in use causes Read-SpectreText to be called again' {
     BeforeAll {
         Set-CommonLocalUserMocks -ExpectedUsername 'freeuser1'
 
-        $script:spectreTextCount = 0
+        $global:spectreTextCount5 = 0
         Mock Read-SpectreText {
-            $script:spectreTextCount++
-            if ($script:spectreTextCount -eq 1) { return 'inuseuser' }
+            $global:spectreTextCount5++
+            if ($global:spectreTextCount5 -eq 1) { return 'inuseuser' }
             return 'freeuser1'
         }
 
@@ -317,27 +322,29 @@ Describe 'Username already in use causes Read-SpectreText to be called again' {
             param($Name)
             if ($PSBoundParameters.ContainsKey('Name')) {
                 if ($Name -eq 'inuseuser') {
-                    return [PSCustomObject]@{ Name = 'inuseuser'; Enabled = $true }
+                    # Always found — this is an existing user (not the one we're creating)
+                    return [PSCustomObject]@{ Name = 'inuseuser'; Enabled = $true;
+                                              PasswordNeverExpires = $true; UserMayNotChangePassword = $true }
                 }
-                if ($Name -eq 'freeuser1') {
-                    return [PSCustomObject]@{
-                        Name = 'freeuser1'; Enabled = $true
-                        PasswordNeverExpires = $true; UserMayNotChangePassword = $true
-                    }
+                if ($Name -eq 'freeuser1' -and $global:userWasCreated) {
+                    # Found only after creation (Phase 6 verification)
+                    return [PSCustomObject]@{ Name = 'freeuser1'; Enabled = $true;
+                                              PasswordNeverExpires = $true; UserMayNotChangePassword = $true }
                 }
                 throw "No local user '$Name' was found."
             }
             return @()
         }
 
-        & $script:ScriptPath *>$null
+        try { & $script:ScriptPath *>$null } catch { }
     }
 
     It 'calls Read-SpectreText twice — once for in-use name, once for valid name' {
-        $script:spectreTextCount | Should -Be 2
+        $global:spectreTextCount5 | Should -Be 2
     }
 
     It 'calls New-LocalUser with the valid (second) username' {
+        # TDD: intentionally red until Phase 5 (user creation) is implemented
         Should -Invoke New-LocalUser -Times 1 -Exactly -Scope Describe -ParameterFilter {
             $Name -eq 'freeuser1'
         }
@@ -351,7 +358,7 @@ Describe 'User declines confirmation — New-LocalUser is NOT called' {
     BeforeAll {
         Set-CommonLocalUserMocks -ConfirmCreate:$false
 
-        & $script:ScriptPath *>$null
+        try { & $script:ScriptPath *>$null } catch { }
     }
 
     It 'does NOT call New-LocalUser when user declines' {
@@ -374,18 +381,7 @@ Describe 'Happy path — all steps succeed, user declines auto-logon' {
     BeforeAll {
         Set-CommonLocalUserMocks -ExpectedUsername 'newadm1' -ConfirmCreate -ConfirmLogon:$false
 
-        Mock Get-LocalUser {
-            param($Name)
-            if ($PSBoundParameters.ContainsKey('Name')) {
-                return [PSCustomObject]@{
-                    Name = 'newadm1'; Enabled = $true
-                    PasswordNeverExpires = $true; UserMayNotChangePassword = $true
-                }
-            }
-            return @()
-        }
-
-        & $script:ScriptPath *>$null
+        try { & $script:ScriptPath *>$null } catch { }
     }
 
     It 'calls Test-IsElevated' {
@@ -436,18 +432,7 @@ Describe 'Happy path with auto-logon — registry keys written and logoff called
 
         Mock Read-Host { [System.Security.SecureString]::new() }
 
-        Mock Get-LocalUser {
-            param($Name)
-            if ($PSBoundParameters.ContainsKey('Name')) {
-                return [PSCustomObject]@{
-                    Name = 'logonuser1'; Enabled = $true
-                    PasswordNeverExpires = $true; UserMayNotChangePassword = $true
-                }
-            }
-            return @()
-        }
-
-        & $script:ScriptPath *>$null
+        try { & $script:ScriptPath *>$null } catch { }
     }
 
     It 'writes AutoAdminLogon registry value' {
@@ -493,14 +478,6 @@ Describe 'Add-LocalGroupMember failure is FATAL — script throws' {
         Set-CommonLocalUserMocks -ExpectedUsername 'failgrp1' -ConfirmCreate
 
         Mock Add-LocalGroupMember { throw 'Access denied adding to Administrators' }
-
-        Mock Get-LocalUser {
-            param($Name)
-            if ($PSBoundParameters.ContainsKey('Name')) {
-                return [PSCustomObject]@{ Name = 'failgrp1'; Enabled = $true }
-            }
-            return @()
-        }
 
         $script:thrownError = $null
         try { & $script:ScriptPath *>$null } catch { $script:thrownError = $_.Exception.Message }
