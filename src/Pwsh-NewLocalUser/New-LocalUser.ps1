@@ -69,9 +69,10 @@ function Get-NextUsername {
     $existing = Get-LocalUser | Select-Object -ExpandProperty Name
     $escaped  = [regex]::Escape($BaseName)
     $pattern  = "^$escaped(\d+)$"
+    $reOptions = [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
     $numbers  = $existing |
-        Where-Object { $_ -imatch $pattern } |
-        ForEach-Object { [int]([regex]::Match($_, $pattern).Groups[1].Value) }
+        Where-Object { [regex]::IsMatch($_, $pattern, $reOptions) } |
+        ForEach-Object { [int]([regex]::Match($_, $pattern, $reOptions).Groups[1].Value) }
     $next = if ($numbers) { ($numbers | Measure-Object -Maximum).Maximum + 1 } else { 1 }
     return "$BaseName$next"
 }
@@ -90,5 +91,49 @@ function Invoke-Logoff { logoff }
 # ── Main execution ────────────────────────────────────────────────────────────
 Write-SpectreFigletText -Text 'New Local User'
 
-# (Phases 2–7 implemented in subsequent tasks)
-throw 'Not yet implemented'
+# ── Phase 2: Password resolution ─────────────────────────────────────────────
+Write-SpectreRule -Title 'Password'
+
+$envFilePath = Get-EnvFilePath
+$envPlain    = Get-EnvPassword -EnvFilePath $envFilePath
+
+if ($envPlain) {
+    Write-SpectreHost '[grey].env file found — press [bold]Enter[/] to use stored password.[/]'
+} else {
+    Write-SpectreHost '[yellow]Warning: No .env file found. You must enter a password.[/]'
+    Write-SpectreHost '[grey]  (Press Ctrl+C at any time to cancel.)[/]'
+}
+
+$securePassword = $null
+
+while ($null -eq $securePassword) {
+    Write-SpectreHost 'Password: ' -NoNewline
+    $inputSecure = Read-Host -AsSecureString
+
+    $inputPlain = ConvertTo-PlainText -SecureString $inputSecure
+
+    if ([string]::IsNullOrEmpty($inputPlain)) {
+        if ($envPlain) {
+            # blank + .env present → use .env value
+            $securePassword = ConvertTo-SecureString -String $envPlain -AsPlainText -Force
+        } else {
+            Write-SpectreHost '[red]Password cannot be blank when no .env file is present.[/]'
+            # loop continues
+        }
+    } else {
+        # Non-blank: require confirmation
+        Write-SpectreHost 'Confirm password: ' -NoNewline
+        $confirmSecure = Read-Host -AsSecureString
+        $confirmPlain  = ConvertTo-PlainText -SecureString $confirmSecure
+
+        if ($inputPlain -ne $confirmPlain) {
+            Write-SpectreHost '[red]Passwords do not match. Please try again.[/]'
+            # loop continues
+        } else {
+            $securePassword = $inputSecure
+        }
+    }
+}
+
+# (Phase 3 continues below — implemented in Task 5)
+throw 'Phase 3 not yet implemented'
