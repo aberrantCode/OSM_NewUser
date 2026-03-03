@@ -81,8 +81,8 @@ dsacls $groupDN /G "${identity}:WP;member"
 
 PowerShell (build machine):
 ```powershell
-cd src/DotNetWebServer
-dotnet publish OsmUserWeb.csproj --configuration Release --runtime win-x64 --self-contained false --output ./publish
+cd src/DotNet-DomainWebServer
+dotnet publish DotNet-DomainWebServer.csproj --configuration Release --runtime win-x64 --self-contained false --output ./publish
 ```
 
 Copy the generated `publish/` folder to the server (SFTP, robocopy, etc.).

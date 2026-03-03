@@ -24,5 +24,12 @@ Thumbs.db
 *.log
 
 # Published app outputs
-src/DotNetWebServer/publish/
-src/DotNetWebServer/publish/**
+src/DotNet-DomainWebServer/publish/
+src/DotNet-DomainWebServer/publish/**
+
+# Build script outputs
+dist/
+OsmUserWeb-*.zip
+
+# Local secrets — never commit
+.env
