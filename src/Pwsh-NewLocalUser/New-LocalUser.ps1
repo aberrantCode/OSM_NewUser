@@ -194,7 +194,7 @@ Write-SpectreRule -Title 'Verification'
 
 $verifiedUser  = Get-LocalUser -Name $username
 $groupMembers  = Get-LocalGroupMember -Group 'Administrators'
-$isMember      = $groupMembers | Where-Object { $_.Name -like "*$username" }
+$isMember      = $groupMembers | Where-Object { $_.Name -like "*\$username" }
 
 [PSCustomObject]@{
     Name                     = $verifiedUser.Name
