@@ -157,5 +157,38 @@ while ($null -eq $username) {
     $username = $trimmed
 }
 
-# (Phase 4 continues below — implemented in Task 6)
-throw 'Phase 4 not yet implemented'
+# ── Phase 4: Confirmation ─────────────────────────────────────────────────────
+Write-SpectreRule -Title 'Confirm'
+
+$summaryObject = [PSCustomObject]@{
+    Username                 = $username
+    PasswordNeverExpires     = 'True'
+    UserMayNotChangePassword = 'True'
+    Group                    = 'Administrators'
+    Computer                 = $env:COMPUTERNAME
+}
+
+Format-SpectreTable -Data $summaryObject
+Format-SpectrePanel -Header 'New User Summary' -Data $summaryObject
+
+$confirmed = Read-SpectreConfirm -Message 'Create this user?'
+if (-not $confirmed) {
+    Write-SpectreHost '[yellow]Aborted.[/]'
+    return
+}
+
+# ── Phase 5: User creation ────────────────────────────────────────────────────
+$createUsername = $username
+$createPassword = $securePassword
+Invoke-SpectreCommandWithStatus -Title 'Creating local user...' -ScriptBlock {
+    New-LocalUser `
+        -Name $createUsername `
+        -Password $createPassword `
+        -PasswordNeverExpires:$true `
+        -UserMayNotChangePassword:$true
+
+    Add-LocalGroupMember -Group 'Administrators' -Member $createUsername
+} -Spinner dots
+
+# (Phase 6 continues below — implemented in Task 7)
+throw 'Phase 6 not yet implemented'

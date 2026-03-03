@@ -101,20 +101,20 @@ BeforeAll {
         Mock Write-SpectreRule        { }
         Mock Write-SpectreHost        { }
         Mock Format-SpectrePanel      { }
-        Mock Format-SpectreTable      { $Input }
+        Mock Format-SpectreTable      { }
         Mock Out-SpectreHost          { }
 
         # Spectre spinner — must actually run its Task scriptblock
         Mock Invoke-SpectreCommandWithStatus {
-            param($Title, $Task, $Spinner, $Color, $SpinnerStyle)
-            & $Task
+            param($Title, $ScriptBlock, $Spinner, $Color, $SpinnerStyle)
+            & $ScriptBlock
         }
 
         # Spectre prompts — return the expected username for Phase 3 validation
         Mock Read-SpectreText { $global:mockExpectedUsername }
         Mock Read-SpectreConfirm {
-            param($Question)
-            if ($Question -match 'Log on') { return $global:mockConfirmLogon }
+            param($Message)
+            if ($Message -match 'Log on') { return $global:mockConfirmLogon }
             return $global:mockConfirmCreate
         }
 
@@ -176,7 +176,7 @@ Describe 'BaseName derived from env:USERNAME by stripping trailing digits' {
         $script:savedUsername = $env:USERNAME
         $env:USERNAME = 'erik7'
 
-        Set-CommonLocalUserMocks -ExpectedUsername 'erik1'
+        Set-CommonLocalUserMocks -ExpectedUsername 'erik1' -ConfirmCreate
 
         try { & $script:ScriptPath *>$null } catch { }
     }
@@ -201,7 +201,7 @@ Describe '.env file present — blank Read-Host response uses env password' {
 
     BeforeAll {
         $envPath = script:New-TempEnvFile -Password 'EnvSecret1!'
-        Set-CommonLocalUserMocks -EnvFilePath $envPath
+        Set-CommonLocalUserMocks -EnvFilePath $envPath -ConfirmCreate
 
         Mock Read-Host { [System.Security.SecureString]::new() }
 
@@ -229,7 +229,7 @@ Describe '.env file present — blank Read-Host response uses env password' {
 Describe 'No .env file — blank password prompt loops until value entered' {
 
     BeforeAll {
-        Set-CommonLocalUserMocks -EnvFilePath ''
+        Set-CommonLocalUserMocks -EnvFilePath '' -ConfirmCreate
 
         $global:readHostCount3 = 0
         $global:blankSS3  = [System.Security.SecureString]::new()
@@ -265,7 +265,7 @@ Describe 'No .env file — blank password prompt loops until value entered' {
 Describe 'Password confirm mismatch causes re-prompt until passwords match' {
 
     BeforeAll {
-        Set-CommonLocalUserMocks -EnvFilePath ''
+        Set-CommonLocalUserMocks -EnvFilePath '' -ConfirmCreate
 
         $global:readHostCount4 = 0
         $global:pass4_1   = script:New-SecureStringStub 'GoodP@ss1'
@@ -308,7 +308,7 @@ Describe 'Password confirm mismatch causes re-prompt until passwords match' {
 Describe 'Username already in use causes Read-SpectreText to be called again' {
 
     BeforeAll {
-        Set-CommonLocalUserMocks -ExpectedUsername 'freeuser1'
+        Set-CommonLocalUserMocks -ExpectedUsername 'freeuser1' -ConfirmCreate
 
         $global:spectreTextCount5 = 0
         Mock Read-SpectreText {
@@ -397,7 +397,7 @@ Describe 'Happy path — all steps succeed, user declines auto-logon' {
 
     It 'calls Add-LocalGroupMember for the Administrators group' {
         Should -Invoke Add-LocalGroupMember -Times 1 -Exactly -Scope Describe -ParameterFilter {
-            $Group -eq 'Administrators' -and $Member -eq 'newadm1'
+            "$Group" -eq 'Administrators' -and "$Member" -eq 'newadm1'
         }
     }
 
