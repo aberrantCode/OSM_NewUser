@@ -89,7 +89,6 @@ BeforeAll {
         $global:mockExpectedUsername = $ExpectedUsername
         $global:mockConfirmCreate    = $ConfirmCreate.IsPresent
         $global:mockConfirmLogon     = $ConfirmLogon.IsPresent
-        $global:userWasCreated       = $false
 
         # Elevation
         Mock Test-IsElevated { $true }

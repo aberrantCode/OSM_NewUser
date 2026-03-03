@@ -46,7 +46,7 @@ and a root `README.md` are also created.
 | Section dividers | `Write-SpectreRule` |
 | Colored status messages | `Write-SpectreHost` (`[red]`, `[green]`, `[yellow]`) |
 | Summary box | `Format-SpectrePanel` + `Format-SpectreTable` |
-| Username prompt | `Read-SpectreText -Question "..." -DefaultValue $suggested` |
+| Username prompt | `Read-SpectreText -Message "..." -DefaultAnswer $suggested` |
 | Y/N confirmations | `Read-SpectreConfirm` |
 | Spinner during creation | `Invoke-SpectreCommandWithStatus` |
 | Verification results | `Format-SpectreTable` |
@@ -78,7 +78,7 @@ encoding warning and enable full glyph support.
 10. Derive base: `$env:USERNAME -replace '\d+$', ''`.
 11. `Get-LocalUser | Select-Object -ExpandProperty Name`; regex-filter `^{base}\d+$`;
     compute `max+1` → `$suggested` (or `{base}1` if none exist).
-12. `Read-SpectreText -Question "Username" -DefaultValue $suggested`
+12. `Read-SpectreText -Message "Username" -DefaultAnswer $suggested`
     (blank = accept default).
 13. Validation loop: trim whitespace; check not empty; `Get-LocalUser -Name $trimmed
     -ErrorAction SilentlyContinue` — if found, red message + re-prompt.
