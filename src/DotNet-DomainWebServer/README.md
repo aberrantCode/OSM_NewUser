@@ -229,7 +229,7 @@ Every account created has the same properties as the PowerShell script:
 
 ```
 src/DotNet-DomainWebServer/
-├── OsmUserWeb.csproj          # .NET 9 web project
+├── DotNet-DomainWebServer.csproj  # .NET 9 web project
 ├── Program.cs                 # Minimal API entry point and route definitions
 ├── appsettings.json           # Configuration (AD settings, logging)
 ├── Models/

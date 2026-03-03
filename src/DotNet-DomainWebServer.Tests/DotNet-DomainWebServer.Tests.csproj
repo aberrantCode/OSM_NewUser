@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
+    <RootNamespace>OsmUserWeb.Tests</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,7 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\DotNet-DomainWebServer\OsmUserWeb.csproj" />
+    <ProjectReference Include="..\DotNet-DomainWebServer\DotNet-DomainWebServer.csproj" />
   </ItemGroup>
 
 </Project>

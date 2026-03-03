@@ -43,15 +43,15 @@
 
 .EXAMPLE
     # Standard framework-dependent build
-    .\Build-OsmUserWeb.ps1
+    .\scripts\Build-DotNet-DomainWebServer.ps1
 
 .EXAMPLE
     # Self-contained build, zipped for distribution
-    .\Build-OsmUserWeb.ps1 -SelfContained -ZipOutput
+    .\scripts\Build-DotNet-DomainWebServer.ps1 -SelfContained -ZipOutput
 
 .EXAMPLE
     # Clean build with custom output directory
-    .\Build-OsmUserWeb.ps1 -Clean -OutputDir C:\Builds\OsmUserWeb
+    .\scripts\Build-DotNet-DomainWebServer.ps1 -Clean -OutputDir C:\Builds\OsmUserWeb
 #>
 [CmdletBinding()]
 param(
@@ -62,7 +62,7 @@ param(
 
     [switch] $SelfContained,
 
-    [string] $OutputDir = (Join-Path $PSScriptRoot 'dist'),
+    [string] $OutputDir = (Join-Path (Split-Path $PSScriptRoot -Parent) 'dist'),
 
     [switch] $ZipOutput,
 
@@ -73,10 +73,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
-$projectRoot  = $PSScriptRoot
+$projectRoot  = Split-Path $PSScriptRoot -Parent
 $webDir       = Join-Path $projectRoot 'src\DotNet-DomainWebServer'
-$projectFile  = Join-Path $webDir 'OsmUserWeb.csproj'
-$testProject  = Join-Path $projectRoot 'src\OsmUserWeb.Tests\OsmUserWeb.Tests.csproj'
+$projectFile  = Join-Path $webDir 'DotNet-DomainWebServer.csproj'
+$testProject  = Join-Path $projectRoot 'src\DotNet-DomainWebServer.Tests\DotNet-DomainWebServer.Tests.csproj'
 $publishDir   = Join-Path $webDir 'publish'
 $versionFile  = Join-Path $projectRoot 'version.json'
 

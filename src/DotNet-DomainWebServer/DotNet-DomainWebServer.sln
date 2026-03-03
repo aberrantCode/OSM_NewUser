@@ -3,9 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.5.2.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OsmUserWeb", "OsmUserWeb.csproj", "{74F4B18A-CBCC-D2A1-FEF2-3D3C0DEDAFE6}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotNet-DomainWebServer", "DotNet-DomainWebServer.csproj", "{74F4B18A-CBCC-D2A1-FEF2-3D3C0DEDAFE6}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OsmUserWeb.Tests", "..\OsmUserWeb.Tests\OsmUserWeb.Tests.csproj", "{2E85F3B7-DE06-42D7-91E1-5733BE05F66B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotNet-DomainWebServer.Tests", "..\DotNet-DomainWebServer.Tests\DotNet-DomainWebServer.Tests.csproj", "{2E85F3B7-DE06-42D7-91E1-5733BE05F66B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

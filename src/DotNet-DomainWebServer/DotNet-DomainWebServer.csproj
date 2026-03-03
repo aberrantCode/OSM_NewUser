@@ -21,7 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="OsmUserWeb.Tests" />
+    <InternalsVisibleTo Include="DotNet-DomainWebServer.Tests" />
   </ItemGroup>
 
   <ItemGroup>
