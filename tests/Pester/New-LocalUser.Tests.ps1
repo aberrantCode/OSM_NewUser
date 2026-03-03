@@ -67,8 +67,8 @@ BeforeAll {
         param(
             [string]$ExpectedUsername  = 'testuser1',
             [string]$EnvFilePath       = '',
-            [switch]$ConfirmCreate,
-            [switch]$ConfirmLogon
+            [switch]$ConfirmCreate = $false,
+            [switch]$ConfirmLogon  = $false
         )
 
         # Elevation
@@ -312,7 +312,7 @@ Describe 'Username already in use causes Read-SpectreText to be called again' {
 Describe 'User declines confirmation — New-LocalUser is NOT called' {
 
     BeforeAll {
-        Set-CommonLocalUserMocks
+        Set-CommonLocalUserMocks -ConfirmCreate:$false
 
         & $script:ScriptPath *>$null
     }
@@ -373,6 +373,12 @@ Describe 'Happy path — all steps succeed, user declines auto-logon' {
         Should -Invoke Get-LocalGroupMember -Times 1 -Exactly -Scope Describe
     }
 
+    It 'calls Get-LocalUser with the new username to verify creation' {
+        Should -Invoke Get-LocalUser -Scope Describe -ParameterFilter {
+            $Name -eq 'newadm1'
+        }
+    }
+
     It 'does NOT call Set-ItemProperty (auto-logon declined)' {
         Should -Invoke Set-ItemProperty -Times 0 -Exactly -Scope Describe
     }
@@ -431,6 +437,12 @@ Describe 'Happy path with auto-logon — registry keys written and logoff called
         }
     }
 
+    It 'writes DefaultPassword registry value with the plain-text password' {
+        Should -Invoke Set-ItemProperty -Scope Describe -ParameterFilter {
+            $Name -eq 'DefaultPassword' -and $Value -eq 'LogonP@ss1'
+        }
+    }
+
     It 'calls Invoke-Logoff to end the current session' {
         Should -Invoke Invoke-Logoff -Times 1 -Exactly -Scope Describe
     }
@@ -459,6 +471,7 @@ Describe 'Add-LocalGroupMember failure is FATAL — script throws' {
 
     It 'throws when Add-LocalGroupMember fails' {
         $script:thrownError | Should -Not -BeNullOrEmpty
+        $script:thrownError | Should -Match 'Access denied'
     }
 
     It 'calls New-LocalUser before the fatal group-add failure' {
@@ -485,6 +498,7 @@ Describe 'New-LocalUser failure is FATAL — script re-throws' {
 
     It 'throws when New-LocalUser fails' {
         $script:thrownError | Should -Not -BeNullOrEmpty
+        $script:thrownError | Should -Match 'already exists'
     }
 
     It 'does NOT call Add-LocalGroupMember after New-LocalUser failure' {
@@ -510,6 +524,7 @@ Describe 'Not elevated — throws with elevation error message' {
 
     It 'throws when not running as Administrator' {
         $script:thrownError | Should -Not -BeNullOrEmpty
+        $script:thrownError | Should -Match '(?i)administrator'
     }
 
     It 'does NOT call New-LocalUser when not elevated' {
