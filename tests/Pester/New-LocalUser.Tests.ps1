@@ -19,7 +19,7 @@
      12. Adds to Administrators via Add-LocalGroupMember.
      13. Verifies creation via Get-LocalUser + Get-LocalGroupMember.
      14. Offers auto-logon prompt via Read-SpectreConfirm.
-     15. Writes registry keys via Set-ItemProperty and calls Invoke-Logoff.
+     15. Writes registry keys via Set-ItemProperty and calls Invoke-Reboot.
 
     Invocation model:
       - `& $script:ScriptPath *>$null` runs the SUT.
@@ -36,7 +36,7 @@
       5.  Username already in use — Read-SpectreText called again with valid name.
       6.  User aborts at creation confirmation — New-LocalUser NOT called.
       7.  Happy path — all steps succeed, user declines auto-logon.
-      8.  Happy path with auto-logon — registry keys written, Invoke-Logoff called.
+      8.  Happy path with auto-logon — registry keys written, Invoke-Reboot called.
       9.  Add-LocalGroupMember fails — FATAL: throws after red error message.
      10.  New-LocalUser throws — FATAL: re-throws.
      11.  Not elevated — throws with elevation message.
@@ -55,7 +55,7 @@ BeforeAll {
     # These stubs are overridden per-Describe in Set-CommonLocalUserMocks.
     function script:Test-IsElevated { return $true }
     function script:Get-EnvFilePath { return $null }
-    function script:Invoke-Logoff   { }
+    function script:Invoke-Reboot   { }
 
     # ── Shared temp .env helpers ──────────────────────────────────────────────
     function script:New-TempEnvFile {
@@ -158,7 +158,11 @@ BeforeAll {
         # Registry + logoff + .env write
         Mock Set-ItemProperty { }
         Mock Set-Content      { }
-        Mock Invoke-Logoff    { }
+        Mock Invoke-Reboot    { }
+
+        # OOBE privacy-screen suppression
+        Mock Test-Path        { $false }
+        Mock New-Item         { }
     }
 }
 
@@ -420,8 +424,8 @@ Describe 'Happy path — all steps succeed, user declines auto-logon' {
         Should -Invoke Set-ItemProperty -Times 0 -Exactly -Scope Describe
     }
 
-    It 'does NOT call Invoke-Logoff (auto-logon declined)' {
-        Should -Invoke Invoke-Logoff -Times 0 -Exactly -Scope Describe
+    It 'does NOT call Invoke-Reboot (auto-logon declined)' {
+        Should -Invoke Invoke-Reboot -Times 0 -Exactly -Scope Describe
     }
 }
 
@@ -469,8 +473,14 @@ Describe 'Happy path with auto-logon — registry keys written and logoff called
         }
     }
 
-    It 'calls Invoke-Logoff to end the current session' {
-        Should -Invoke Invoke-Logoff -Times 1 -Exactly -Scope Describe
+    It 'writes DisablePrivacyExperience registry value to suppress OOBE privacy screen' {
+        Should -Invoke Set-ItemProperty -Scope Describe -ParameterFilter {
+            $Name -eq 'DisablePrivacyExperience' -and $Value -eq 1
+        }
+    }
+
+    It 'calls Invoke-Reboot to end the current session' {
+        Should -Invoke Invoke-Reboot -Times 1 -Exactly -Scope Describe
     }
 }
 
