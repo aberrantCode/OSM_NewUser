@@ -172,15 +172,15 @@ while ($null -eq $username) {
 # ── Phase 4: Confirmation ─────────────────────────────────────────────────────
 Write-SpectreRule -Title 'Confirm'
 
-$summaryObject = [PSCustomObject]@{
-    Username                 = $username
-    PasswordNeverExpires     = $true
-    UserMayNotChangePassword = $true
-    Group                    = 'Administrators'
-    Computer                 = $env:COMPUTERNAME
-}
+$summaryText = (@(
+    "Username                 : $username"
+    "Password Never Expires   : True"
+    "User May Not Change Pwd  : True"
+    "Group                    : Administrators"
+    "Computer                 : $env:COMPUTERNAME"
+) -join "`n")
 
-Format-SpectrePanel -Header 'New User Summary' -Data $summaryObject
+Format-SpectrePanel -Header 'New User Summary' -Data $summaryText
 
 $confirmed = Read-SpectreConfirm -Message 'Create this user?'
 if (-not $confirmed) {
