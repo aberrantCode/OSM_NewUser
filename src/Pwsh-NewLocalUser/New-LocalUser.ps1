@@ -219,9 +219,9 @@ $isMember = $groupMembers | Where-Object { $_.Name -like "*\$username" }
 [PSCustomObject]@{
     Name                     = $verifiedUser.Name
     Enabled                  = $verifiedUser.Enabled
-    PasswordNeverExpires     = $verifiedUser.PasswordNeverExpires
-    UserMayNotChangePassword = $verifiedUser.UserMayNotChangePassword
-    'Member of Administrators' = if ($isMember) { 'Yes' } else { 'No' }
+    PasswordNeverExpires     = $null -eq $verifiedUser.PasswordExpires
+    UserMayNotChangePassword = -not $verifiedUser.UserMayChangePassword
+    'Member of Administrators' = if ($null -eq $groupMembers) { 'Unknown' } elseif ($isMember) { 'Yes' } else { 'No' }
 } | Format-SpectreTable
 
 # ── Phase 7: Auto-logon offer ─────────────────────────────────────────────────
