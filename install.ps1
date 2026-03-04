@@ -82,7 +82,7 @@ if ($installedVersion -eq $version) {
     try {
         Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing -ErrorAction Stop
     } catch {
-        Write-Error "Download failed: $_"
+        Write-Warning "Download failed: $_"
         Write-Warning 'Existing install left untouched.'
         exit 1
     }
@@ -102,7 +102,9 @@ if ($installedVersion -eq $version) {
     $extractedRoot = Get-ChildItem -Path $stagingDir -Directory | Select-Object -First 1
 
     if (-not $extractedRoot) {
-        Write-Error 'Unexpected ZIP structure: no root folder found.'
+        Write-Warning 'Unexpected ZIP structure: no root folder found.'
+        Remove-Item -Path $zipPath    -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path $stagingDir -Recurse -Force -ErrorAction SilentlyContinue
         exit 1
     }
 
