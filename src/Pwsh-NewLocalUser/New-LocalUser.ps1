@@ -13,7 +13,7 @@
     with an interactive prompt that falls back to that value when left blank.
 
     After successful creation the script optionally configures Windows
-    auto-logon (one-time) and immediately logs off the current session.
+    auto-logon (one-time) and immediately reboots the machine.
 
 .NOTES
     Requires: PowerShell 5.1+, admin elevation, PwshSpectreConsole module.
@@ -35,6 +35,7 @@ if (-not (Test-IsElevated)) {
 }
 
 # ── Update check ───────────────────────────────────────────────────────────────
+# DEV-SAFE: skipped entirely when version.txt is absent (cloned/dev environments).
 $versionFile = Join-Path $PSScriptRoot '..\..' 'version.txt'
 if (Test-Path $versionFile) {
     $localVersion = (Get-Content $versionFile -Raw -ErrorAction SilentlyContinue).Trim()
@@ -45,11 +46,15 @@ if (Test-Path $versionFile) {
             -ErrorAction Stop
         $latestVersion = $release.tag_name -replace '^v', ''
         if ($latestVersion -ne $localVersion) {
-            Write-Host "[grey]New version available ($latestVersion). Updating...[/]"
+            # Plain Write-Host — PwshSpectreConsole not yet imported at this point
+            Write-Host "New version available ($latestVersion). Updating..." -ForegroundColor Cyan
             $env:OSM_INSTALL_SKIP_RUN_PROMPT = '1'
             Invoke-Expression (Invoke-RestMethod 'https://raw.githubusercontent.com/aberrantCode/OSM_NewUser/main/install.ps1')
-            $env:OSM_INSTALL_SKIP_RUN_PROMPT = $null
-            & 'C:\osm\new-localuser\scripts\Start-App.ps1'
+            # Fully remove the env var rather than setting to empty string
+            [System.Environment]::SetEnvironmentVariable('OSM_INSTALL_SKIP_RUN_PROMPT', $null)
+            # Derive installed root from $PSScriptRoot (src\Pwsh-NewLocalUser → ..\.. = install root)
+            $installedRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+            & (Join-Path $installedRoot 'scripts\Start-App.ps1')
             return
         }
     } catch {
