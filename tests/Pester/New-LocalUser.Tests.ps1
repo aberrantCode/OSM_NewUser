@@ -593,3 +593,31 @@ Describe 'No .env file — user declines saving password — Set-Content NOT cal
         Should -Invoke Set-Content -Times 0 -Exactly -Scope Describe
     }
 }
+
+# ── Scenario 14: Get-LocalGroupMember fails (error 1789) — non-fatal ──────────
+
+Describe 'Get-LocalGroupMember failure is non-fatal — script continues with warning' {
+
+    BeforeAll {
+        Set-CommonLocalUserMocks -ExpectedUsername 'warnuser1' -ConfirmCreate
+
+        Mock Get-LocalGroupMember { throw 'An unspecified error occurred: error code = 1789' }
+
+        $script:thrownError = $null
+        try { & $script:ScriptPath *>$null } catch { $script:thrownError = $_.Exception.Message }
+    }
+
+    It 'does NOT throw when Get-LocalGroupMember fails' {
+        $script:thrownError | Should -BeNullOrEmpty
+    }
+
+    It 'displays a yellow warning about the group membership verification failure' {
+        Should -Invoke Write-SpectreHost -Scope Describe -ParameterFilter {
+            $Message -match '\[yellow\]' -and $Message -match 'verify group membership'
+        }
+    }
+
+    It 'still calls New-LocalUser before the verification failure' {
+        Should -Invoke New-LocalUser -Times 1 -Exactly -Scope Describe
+    }
+}

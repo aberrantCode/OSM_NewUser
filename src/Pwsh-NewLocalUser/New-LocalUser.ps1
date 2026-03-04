@@ -192,7 +192,7 @@ if (-not $confirmed) {
 $createUsername = $username
 $createPassword = $securePassword
 Invoke-SpectreCommandWithStatus -Title 'Creating local user...' -ScriptBlock {
-    New-LocalUser `
+    $null = New-LocalUser `
         -Name $createUsername `
         -Password $createPassword `
         -PasswordNeverExpires:$true `
@@ -205,8 +205,16 @@ Invoke-SpectreCommandWithStatus -Title 'Creating local user...' -ScriptBlock {
 Write-SpectreRule -Title 'Verification'
 
 $verifiedUser  = Get-LocalUser -Name $username
-$groupMembers  = Get-LocalGroupMember -Group 'Administrators'
-$isMember      = $groupMembers | Where-Object { $_.Name -like "*\$username" }
+$groupMembers = try {
+    Get-LocalGroupMember -Group 'Administrators'
+} catch {
+    # Error 1789 (trust failure) occurs on domain-joined machines when the DC is
+    # unreachable and domain accounts exist in the local group. Creation succeeded;
+    # only verification is affected.
+    Write-SpectreHost "[yellow]Warning: Could not verify group membership ($_). Account was added successfully.[/]"
+    $null
+}
+$isMember = $groupMembers | Where-Object { $_.Name -like "*\$username" }
 
 [PSCustomObject]@{
     Name                     = $verifiedUser.Name
