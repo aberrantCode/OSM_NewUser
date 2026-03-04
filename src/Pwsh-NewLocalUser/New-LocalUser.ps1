@@ -135,6 +135,18 @@ while ($null -eq $securePassword) {
     }
 }
 
+# Offer to persist the interactively-entered password to a new .env file
+if ([string]::IsNullOrEmpty($envFilePath)) {
+    $saveEnv = Read-SpectreConfirm -Message 'No .env file found. Save password to .env for future use?'
+    if ($saveEnv) {
+        $pwToSave   = ConvertTo-PlainText -SecureString $securePassword
+        $envNewPath = Join-Path $PSScriptRoot '..\..' '.env'
+        Set-Content -Path $envNewPath -Value "NEW_USER_PASSWORD=$pwToSave" -Encoding UTF8
+        $pwToSave = $null
+        Write-SpectreHost '[green].env file created at solution root.[/]'
+    }
+}
+
 # ── Phase 3: Username resolution ─────────────────────────────────────────────
 Write-SpectreRule -Title 'Username'
 
@@ -160,15 +172,15 @@ while ($null -eq $username) {
 # ── Phase 4: Confirmation ─────────────────────────────────────────────────────
 Write-SpectreRule -Title 'Confirm'
 
-$summaryObject = [PSCustomObject]@{
-    Username                 = $username
-    PasswordNeverExpires     = $true
-    UserMayNotChangePassword = $true
-    Group                    = 'Administrators'
-    Computer                 = $env:COMPUTERNAME
-}
+$summaryText = (@(
+    "Username                 : $username"
+    "Password Never Expires   : True"
+    "User May Not Change Pwd  : True"
+    "Group                    : Administrators"
+    "Computer                 : $env:COMPUTERNAME"
+) -join "`n")
 
-Format-SpectrePanel -Header 'New User Summary' -Data $summaryObject
+Format-SpectrePanel -Header 'New User Summary' -Data $summaryText
 
 $confirmed = Read-SpectreConfirm -Message 'Create this user?'
 if (-not $confirmed) {
@@ -180,7 +192,7 @@ if (-not $confirmed) {
 $createUsername = $username
 $createPassword = $securePassword
 Invoke-SpectreCommandWithStatus -Title 'Creating local user...' -ScriptBlock {
-    New-LocalUser `
+    $null = New-LocalUser `
         -Name $createUsername `
         -Password $createPassword `
         -PasswordNeverExpires:$true `
@@ -193,15 +205,23 @@ Invoke-SpectreCommandWithStatus -Title 'Creating local user...' -ScriptBlock {
 Write-SpectreRule -Title 'Verification'
 
 $verifiedUser  = Get-LocalUser -Name $username
-$groupMembers  = Get-LocalGroupMember -Group 'Administrators'
-$isMember      = $groupMembers | Where-Object { $_.Name -like "*\$username" }
+$groupMembers = try {
+    Get-LocalGroupMember -Group 'Administrators'
+} catch {
+    # Error 1789 (trust failure) occurs on domain-joined machines when the DC is
+    # unreachable and domain accounts exist in the local group. Creation succeeded;
+    # only verification is affected.
+    Write-SpectreHost "[yellow]Warning: Could not verify group membership ($_). Account was added successfully.[/]"
+    $null
+}
+$isMember = $groupMembers | Where-Object { $_.Name -like "*\$username" }
 
 [PSCustomObject]@{
     Name                     = $verifiedUser.Name
     Enabled                  = $verifiedUser.Enabled
-    PasswordNeverExpires     = $verifiedUser.PasswordNeverExpires
-    UserMayNotChangePassword = $verifiedUser.UserMayNotChangePassword
-    'Member of Administrators' = if ($isMember) { 'Yes' } else { 'No' }
+    PasswordNeverExpires     = $null -eq $verifiedUser.PasswordExpires
+    UserMayNotChangePassword = -not $verifiedUser.UserMayChangePassword
+    'Member of Administrators' = if ($null -eq $groupMembers) { 'Unknown' } elseif ($isMember) { 'Yes' } else { 'No' }
 } | Format-SpectreTable
 
 # ── Phase 7: Auto-logon offer ─────────────────────────────────────────────────
