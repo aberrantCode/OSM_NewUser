@@ -85,8 +85,8 @@ function ConvertTo-PlainText {
     finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
 }
 
-# ── Helper: logoff wrapper (mockable in Pester) ───────────────────────────────
-function Invoke-Logoff { logoff }
+# ── Helper: reboot wrapper (mockable in Pester) ───────────────────────────────
+function Invoke-Reboot { Restart-Computer -Force }
 
 # ── Main execution ────────────────────────────────────────────────────────────
 Write-SpectreFigletText -Text 'New Local User'
@@ -235,6 +235,15 @@ if ($logon) {
     Set-ItemProperty -Path $regPath -Name 'DefaultPassword'   -Value $plainPassword
     Set-ItemProperty -Path $regPath -Name 'AutoLogonCount'    -Value '1'
     $plainPassword = $null  # clear the reference
-    Write-SpectreHost '[grey]Auto-logon configured (one-time). Logging off now...[/]'
-    Invoke-Logoff
+
+    # Suppress the Windows privacy settings screen on first logon.
+    # DisablePrivacyExperience bypasses the OOBE privacy page for local accounts,
+    # preventing prompts for Location, Find My Device, Inking & Typing, and
+    # Tailored Services. This is a machine-wide policy and persists after reboot.
+    $oobePath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\OOBE'
+    if (-not (Test-Path $oobePath)) { $null = New-Item -Path $oobePath -Force }
+    Set-ItemProperty -Path $oobePath -Name 'DisablePrivacyExperience' -Value 1 -Type DWord
+
+    Write-SpectreHost '[grey]Auto-logon configured (one-time). Rebooting now...[/]'
+    Invoke-Reboot
 }
