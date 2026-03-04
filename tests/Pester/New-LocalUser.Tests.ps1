@@ -163,6 +163,12 @@ BeforeAll {
         # OOBE privacy-screen suppression
         Mock Test-Path        { $false }
         Mock New-Item         { }
+
+        # One-shot auto-logon cleanup scheduled task
+        Mock New-ScheduledTaskAction    { [PSCustomObject]@{} }
+        Mock New-ScheduledTaskTrigger   { [PSCustomObject]@{} }
+        Mock New-ScheduledTaskPrincipal { [PSCustomObject]@{} }
+        Mock Register-ScheduledTask     { }
     }
 }
 
@@ -427,6 +433,10 @@ Describe 'Happy path — all steps succeed, user declines auto-logon' {
     It 'does NOT call Invoke-Reboot (auto-logon declined)' {
         Should -Invoke Invoke-Reboot -Times 0 -Exactly -Scope Describe
     }
+
+    It 'does NOT register auto-logon cleanup task when auto-logon declined' {
+        Should -Invoke Register-ScheduledTask -Times 0 -Exactly -Scope Describe
+    }
 }
 
 # ── Scenario 8: Happy path WITH auto-logon ───────────────────────────────────
@@ -461,12 +471,6 @@ Describe 'Happy path with auto-logon — registry keys written and logoff called
         }
     }
 
-    It 'writes AutoLogonCount registry value as 1' {
-        Should -Invoke Set-ItemProperty -Scope Describe -ParameterFilter {
-            $Name -eq 'AutoLogonCount' -and $Value -eq '1'
-        }
-    }
-
     It 'writes DefaultPassword registry value with the plain-text password' {
         Should -Invoke Set-ItemProperty -Scope Describe -ParameterFilter {
             $Name -eq 'DefaultPassword' -and $Value -eq 'LogonP@ss1'
@@ -477,6 +481,18 @@ Describe 'Happy path with auto-logon — registry keys written and logoff called
         Should -Invoke Set-ItemProperty -Scope Describe -ParameterFilter {
             $Name -eq 'DisablePrivacyExperience' -and $Value -eq 1
         }
+    }
+
+    It 'registers a scheduled task to clear auto-logon after first logon' {
+        Should -Invoke Register-ScheduledTask -Times 1 -Exactly -Scope Describe -ParameterFilter {
+            $TaskName -eq 'OSM_ClearAutoLogon'
+        }
+    }
+
+    It 'does NOT write AutoLogonCount registry value (unreliable in production Windows)' {
+        Should -Invoke Set-ItemProperty -Scope Describe -ParameterFilter {
+            $Name -eq 'AutoLogonCount'
+        } -Times 0 -Exactly
     }
 
     It 'calls Invoke-Reboot to end the current session' {

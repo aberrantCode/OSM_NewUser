@@ -256,7 +256,6 @@ if ($logon) {
     Set-ItemProperty -Path $regPath -Name 'DefaultUserName'   -Value $username
     Set-ItemProperty -Path $regPath -Name 'DefaultDomainName' -Value $env:COMPUTERNAME
     Set-ItemProperty -Path $regPath -Name 'DefaultPassword'   -Value $plainPassword
-    Set-ItemProperty -Path $regPath -Name 'AutoLogonCount'    -Value '1'
     $plainPassword = $null  # clear the reference
 
     # Suppress the Windows privacy settings screen on first logon.
@@ -266,6 +265,25 @@ if ($logon) {
     $oobePath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\OOBE'
     if (-not (Test-Path $oobePath)) { $null = New-Item -Path $oobePath -Force }
     Set-ItemProperty -Path $oobePath -Name 'DisablePrivacyExperience' -Value 1 -Type DWord
+
+    # Register a one-shot scheduled task (SYSTEM, highest privilege) that fires on
+    # the new user's first logon, clears the auto-logon registry keys, then deletes
+    # itself. AutoLogonCount set directly in the registry is NOT decremented by
+    # Windows Logon in production Windows — it only works through Sysprep/unattend.
+    # The scheduled task is the reliable one-time auto-logon mechanism.
+    $clearCmd = @"
+`$regPath = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+Set-ItemProperty -Path `$regPath -Name 'AutoAdminLogon' -Value '0'
+Remove-ItemProperty -Path `$regPath -Name 'DefaultPassword' -ErrorAction SilentlyContinue
+Unregister-ScheduledTask -TaskName 'OSM_ClearAutoLogon' -Confirm:`$false
+"@
+    $encoded   = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($clearCmd))
+    $action    = New-ScheduledTaskAction -Execute 'powershell.exe' `
+                     -Argument "-NonInteractive -WindowStyle Hidden -EncodedCommand $encoded"
+    $trigger   = New-ScheduledTaskTrigger -AtLogOn -User $username
+    $principal = New-ScheduledTaskPrincipal -RunLevel Highest -UserId 'SYSTEM'
+    Register-ScheduledTask -TaskName 'OSM_ClearAutoLogon' `
+        -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
 
     Write-SpectreHost '[grey]Auto-logon configured (one-time). Rebooting now...[/]'
     Invoke-Reboot
