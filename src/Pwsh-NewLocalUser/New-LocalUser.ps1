@@ -34,6 +34,29 @@ if (-not (Test-IsElevated)) {
     throw 'Script must be run as Administrator.'
 }
 
+# ── Update check ───────────────────────────────────────────────────────────────
+$versionFile = Join-Path $PSScriptRoot '..\..' 'version.txt'
+if (Test-Path $versionFile) {
+    $localVersion = (Get-Content $versionFile -Raw -ErrorAction SilentlyContinue).Trim()
+    try {
+        $release = Invoke-RestMethod `
+            -Uri 'https://api.github.com/repos/aberrantCode/OSM_NewUser/releases/latest' `
+            -TimeoutSec 5 `
+            -ErrorAction Stop
+        $latestVersion = $release.tag_name -replace '^v', ''
+        if ($latestVersion -ne $localVersion) {
+            Write-Host "[grey]New version available ($latestVersion). Updating...[/]"
+            $env:OSM_INSTALL_SKIP_RUN_PROMPT = '1'
+            Invoke-Expression (Invoke-RestMethod 'https://raw.githubusercontent.com/aberrantCode/OSM_NewUser/main/install.ps1')
+            $env:OSM_INSTALL_SKIP_RUN_PROMPT = $null
+            & 'C:\osm\new-localuser\scripts\Start-App.ps1'
+            return
+        }
+    } catch {
+        # Offline or API error — skip update check silently
+    }
+}
+
 # ── Spectre Console ───────────────────────────────────────────────────────────
 $OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $env:IgnoreSpectreEncoding = $true   # we set UTF-8 above; suppress the module warning
