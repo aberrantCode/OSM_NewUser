@@ -79,8 +79,9 @@ BeforeAll {
         param(
             [string]$ExpectedUsername  = 'testuser1',
             [string]$EnvFilePath       = '',
-            [switch]$ConfirmCreate = $false,
-            [switch]$ConfirmLogon  = $false
+            [switch]$ConfirmCreate  = $false,
+            [switch]$ConfirmLogon   = $false,
+            [switch]$ConfirmSaveEnv = $false
         )
 
         # Stash params in global scope so mock scriptblocks can reference them
@@ -89,6 +90,7 @@ BeforeAll {
         $global:mockExpectedUsername = $ExpectedUsername
         $global:mockConfirmCreate    = $ConfirmCreate.IsPresent
         $global:mockConfirmLogon     = $ConfirmLogon.IsPresent
+        $global:mockConfirmSaveEnv   = $ConfirmSaveEnv.IsPresent
 
         # Elevation
         Mock Test-IsElevated { $true }
@@ -114,7 +116,8 @@ BeforeAll {
         Mock Read-SpectreText { $global:mockExpectedUsername }
         Mock Read-SpectreConfirm {
             param($Message)
-            if ($Message -match 'Log on') { return $global:mockConfirmLogon }
+            if ($Message -match 'Log on')  { return $global:mockConfirmLogon }
+            if ($Message -match 'Save')    { return $global:mockConfirmSaveEnv }
             return $global:mockConfirmCreate
         }
 
@@ -152,8 +155,9 @@ BeforeAll {
             @([PSCustomObject]@{ Name = $global:mockExpectedUsername; ObjectClass = 'User' })
         }
 
-        # Registry + logoff
+        # Registry + logoff + .env write
         Mock Set-ItemProperty { }
+        Mock Set-Content      { }
         Mock Invoke-Logoff    { }
     }
 }
@@ -161,10 +165,10 @@ BeforeAll {
 AfterAll {
     # Clean up global variables used by mock scriptblocks to prevent state leakage
     Remove-Variable -Name 'mockEnvFilePath', 'mockExpectedUsername', 'mockConfirmCreate',
-                         'mockConfirmLogon', 'defaultSS', 'userWasCreated',
+                         'mockConfirmLogon', 'mockConfirmSaveEnv', 'defaultSS', 'userWasCreated',
                          'readHostCount3', 'blankSS3', 'filledSS3',
                          'readHostCount4', 'pass4_1', 'pass4_wrong', 'pass4_2', 'pass4_confirm',
-                         'spectreTextCount5' `
+                         'spectreTextCount5', 'savedEnvContent' `
                     -Scope Global -ErrorAction SilentlyContinue
 }
 
@@ -547,5 +551,45 @@ Describe 'Not elevated — throws with elevation error message' {
 
     It 'does NOT call Import-Module when not elevated' {
         Should -Invoke Import-Module -Times 0 -Exactly -Scope Describe
+    }
+}
+
+# ── Scenario 12: No .env — user opts to save password ────────────────────────
+
+Describe 'No .env file — user opts to save password writes .env file' {
+
+    BeforeAll {
+        Set-CommonLocalUserMocks -ConfirmCreate -ConfirmSaveEnv
+
+        $global:savedEnvContent = $null
+        Mock Set-Content {
+            param($Path, $Value, $Encoding)
+            $global:savedEnvContent = $Value
+        }
+
+        try { & $script:ScriptPath *>$null } catch { }
+    }
+
+    It 'calls Set-Content to write the .env file' {
+        Should -Invoke Set-Content -Times 1 -Exactly -Scope Describe
+    }
+
+    It 'writes NEW_USER_PASSWORD=<value> to .env' {
+        $global:savedEnvContent | Should -Match '^NEW_USER_PASSWORD=.+'
+    }
+}
+
+# ── Scenario 13: No .env — user declines saving password ─────────────────────
+
+Describe 'No .env file — user declines saving password — Set-Content NOT called' {
+
+    BeforeAll {
+        Set-CommonLocalUserMocks -ConfirmCreate -ConfirmSaveEnv:$false
+
+        try { & $script:ScriptPath *>$null } catch { }
+    }
+
+    It 'does NOT call Set-Content when user declines saving password' {
+        Should -Invoke Set-Content -Times 0 -Exactly -Scope Describe
     }
 }

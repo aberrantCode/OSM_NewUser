@@ -135,6 +135,18 @@ while ($null -eq $securePassword) {
     }
 }
 
+# Offer to persist the interactively-entered password to a new .env file
+if ([string]::IsNullOrEmpty($envFilePath)) {
+    $saveEnv = Read-SpectreConfirm -Message 'No .env file found. Save password to .env for future use?'
+    if ($saveEnv) {
+        $pwToSave   = ConvertTo-PlainText -SecureString $securePassword
+        $envNewPath = Join-Path $PSScriptRoot '..\..' '.env'
+        Set-Content -Path $envNewPath -Value "NEW_USER_PASSWORD=$pwToSave" -Encoding UTF8
+        $pwToSave = $null
+        Write-SpectreHost '[green].env file created at solution root.[/]'
+    }
+}
+
 # ── Phase 3: Username resolution ─────────────────────────────────────────────
 Write-SpectreRule -Title 'Username'
 
