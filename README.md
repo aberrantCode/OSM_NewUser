@@ -12,6 +12,16 @@ A collection of Windows account-creation utilities for local and domain administ
 
 ## Quick Start — Local User
 
+**Remote install (recommended) — run from an elevated PowerShell:**
+
+```powershell
+irm 'https://raw.githubusercontent.com/aberrantCode/OSM_NewUser/main/install.ps1' | iex
+```
+
+Downloads the latest release to `C:\osm\new-localuser`, installs dependencies, and optionally launches the tool. Auto-elevates if needed.
+
+**Manual (cloned repo):**
+
 1. Copy `.env.example` to `.env` and set `NEW_USER_PASSWORD`
 2. Run `scripts\Start-App.ps1` (auto-elevates if needed)
 
