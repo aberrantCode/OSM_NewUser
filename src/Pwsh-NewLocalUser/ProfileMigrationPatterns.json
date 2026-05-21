@@ -1,0 +1,20 @@
+[
+  {
+    "Description": "ManyCam recordings",
+    "RelativePath": "Videos\\ManyCam",
+    "Pattern": "*.mp4",
+    "Recurse": true
+  },
+  {
+    "Description": "Downloaded PDF files",
+    "RelativePath": "Downloads",
+    "Pattern": "*.pdf",
+    "Recurse": false
+  },
+  {
+    "Description": "ShareX screen recordings",
+    "RelativePath": "Documents\\ShareX\\ScreenRecordings",
+    "Pattern": "*.mp4",
+    "Recurse": true
+  }
+]

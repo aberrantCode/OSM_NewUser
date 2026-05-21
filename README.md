@@ -6,7 +6,7 @@ A collection of Windows account-creation utilities for local and domain administ
 
 | Tool | Purpose | Docs |
 |---|---|---|
-| `scripts/Start-App.ps1` → `src/Pwsh-NewLocalUser/New-LocalUser.ps1` | Create a numbered **local** Windows administrator account interactively | [docs/NEW-LOCALUSER.md](docs/NEW-LOCALUSER.md) |
+| `scripts/Start-App.ps1` → `src/Pwsh-NewLocalUser/New-LocalUser.ps1` | Create a numbered **local** Windows administrator account interactively (with optional post-logon profile migration) | [docs/NEW-LOCALUSER.md](docs/NEW-LOCALUSER.md) |
 | `src/PwshScript/New-OSMUser.ps1` | Create a numbered **Active Directory** domain admin account | [src/PwshScript/README.md](src/PwshScript/README.md) |
 | `src/DotNet-DomainWebServer/` | ASP.NET Core web server for domain account creation | [src/DotNet-DomainWebServer/README.md](src/DotNet-DomainWebServer/README.md) |
 

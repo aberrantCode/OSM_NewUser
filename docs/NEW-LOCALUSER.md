@@ -66,6 +66,18 @@ NEW_USER_PASSWORD=YourP@ssw0rd
 | No `.env`, non-blank password typed | Confirmation prompt shown; typed value used if they match |
 | Passwords do not match | Error; loop repeats |
 
+## Profile Migration Configuration
+
+Before the auto-logon prompt, `New-LocalUser.ps1` checks `src/Pwsh-NewLocalUser/ProfileMigrationPatterns.json` for file-pattern rules to inspect inside the **current** user profile.
+
+Default rules include:
+
+- `Videos\ManyCam\*.mp4` (recursive)
+- `Downloads\*.pdf`
+- `Documents\ShareX\ScreenRecordings\*.mp4` (recursive)
+
+If matches are found, the script displays per-rule counts and prompts whether to migrate them for the new user after first sign-in.
+
 ## How It Works
 
 The script runs in seven sequential phases:
@@ -82,7 +94,9 @@ The script runs in seven sequential phases:
 
 6. **Verification** — reads the account back with `Get-LocalUser` and confirms Administrators membership with `Get-LocalGroupMember`. Results are displayed in a `Format-SpectreTable`.
 
-7. **Auto-logon offer** — `Read-SpectreConfirm` asks whether to log on as the new account immediately. If confirmed, five registry keys are written under `HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`:
+7. **Profile migration pre-check** — Uses `ProfileMigrationPatterns.json` to scan configured folders in the current profile. If matches are found and accepted, the script registers an `HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce` entry (`OSM_ProfileMigration`) that launches `Invoke-ProfileMigrationPostLogon.ps1` with `-PreviousUserName` and `-NewUserName` (plus config path) on the first logon.
+
+8. **Auto-logon offer** — `Read-SpectreConfirm` asks whether to log on as the new account immediately. If confirmed, five registry keys are written under `HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`:
 
    | Key | Value set |
    |---|---|
@@ -174,6 +188,27 @@ Create this user? [y/n]: y
 Log on as 'erik1' now? [y/n]: n
 ```
 
+## Post-Logon Migration Script
+
+`src/Pwsh-NewLocalUser/Invoke-ProfileMigrationPostLogon.ps1`:
+
+- auto-elevates if not already elevated
+- grants the new local user modify access to matched source paths (via `icacls`)
+- copies matched files into the same relative subfolders in the new profile
+- writes activity logs (default: `C:\ProgramData\OSM\logs\profile-migration-*.log`)
+- displays migration results to the user
+- prompts whether to remove the previous local user account from the workstation
+
+Useful debug/testing parameters include:
+
+- `-ConfigPath`
+- `-PreviousUserProfilePath`
+- `-NewUserProfilePath`
+- `-LogPath`
+- `-SkipRemovalPrompt`
+- `-NonInteractive`
+- `-WhatIf`
+
 ## Change Log
 
 ### 2026-03-03 — Initial release
@@ -181,3 +216,10 @@ Log on as 'erik1' now? [y/n]: n
 - Created script with full interactive UI via PwshSpectreConsole
 - Supports .env password pre-configuration
 - Auto-logon offer after successful account creation
+
+### 2026-05-21 — Profile migration after first logon
+
+- Added configurable profile migration rules (`ProfileMigrationPatterns.json`)
+- Added pre-auto-logon detection/prompt for matching files
+- Added RunOnce registration for post-logon migration
+- Added `Invoke-ProfileMigrationPostLogon.ps1` with logging, ACL grant, copy, and optional previous-user removal prompt

@@ -116,6 +116,70 @@ function ConvertTo-PlainText {
 # ── Helper: reboot wrapper (mockable in Pester) ───────────────────────────────
 function Invoke-Reboot { Restart-Computer -Force }
 
+function ConvertTo-SingleQuotedLiteral {
+    param([string]$Value)
+    $safeValue = if ($null -eq $Value) { '' } else { $Value }
+    return "'" + ($safeValue -replace "'", "''") + "'"
+}
+
+function Get-ProfileMigrationRules {
+    param([string]$ConfigPath)
+
+    if ([string]::IsNullOrWhiteSpace($ConfigPath) -or -not (Test-Path $ConfigPath -PathType Leaf)) {
+        return @()
+    }
+
+    try {
+        $raw = Get-Content -Path $ConfigPath -Raw -ErrorAction Stop
+        $parsed = ConvertFrom-Json -InputObject $raw -ErrorAction Stop
+    } catch {
+        Write-SpectreHost "[yellow]Warning: Could not parse migration config '$ConfigPath'. Profile migration will be skipped.[/]"
+        return @()
+    }
+
+    $rules = @($parsed)
+    return $rules | Where-Object {
+        -not [string]::IsNullOrWhiteSpace($_.RelativePath) -and
+        -not [string]::IsNullOrWhiteSpace($_.Pattern)
+    }
+}
+
+function Get-ProfileMigrationCandidates {
+    param(
+        [string]$CurrentProfilePath,
+        [string]$ConfigPath
+    )
+
+    $results = @()
+    $rules = Get-ProfileMigrationRules -ConfigPath $ConfigPath
+    foreach ($rule in $rules) {
+        $sourcePath = Join-Path $CurrentProfilePath $rule.RelativePath
+        if (-not (Test-Path $sourcePath -PathType Container)) {
+            continue
+        }
+
+        $getChildItemArgs = @{
+            Path        = $sourcePath
+            Filter      = $rule.Pattern
+            File        = $true
+            ErrorAction = 'SilentlyContinue'
+        }
+        if ($rule.Recurse) { $getChildItemArgs.Recurse = $true }
+
+        $matches = @(Get-ChildItem @getChildItemArgs)
+        if ($matches.Count -gt 0) {
+            $results += [PSCustomObject]@{
+                RelativePath = $rule.RelativePath
+                Pattern      = $rule.Pattern
+                SourcePath   = $sourcePath
+                Count        = $matches.Count
+            }
+        }
+    }
+
+    return $results
+}
+
 # ── Main execution ────────────────────────────────────────────────────────────
 Write-SpectreFigletText -Text 'New Local User'
 
@@ -253,8 +317,38 @@ $isMember = $groupMembers | Where-Object { $_.Name -like "*\$username" }
 } | Format-SpectreTable
 
 # ── Phase 7: Auto-logon offer ─────────────────────────────────────────────────
+$previousUsername     = $env:USERNAME
+$migrationConfigPath  = Join-Path $PSScriptRoot 'ProfileMigrationPatterns.json'
+$migrationCandidates  = Get-ProfileMigrationCandidates -CurrentProfilePath $env:USERPROFILE -ConfigPath $migrationConfigPath
+$migrateProfileAssets = $false
+
+if ($migrationCandidates.Count -gt 0) {
+    Write-SpectreRule -Title 'Profile Migration'
+    Write-SpectreHost "[cyan]Found files under '$previousUsername' that can be migrated after first logon:[/]"
+    foreach ($candidate in $migrationCandidates) {
+        Write-SpectreHost ("[grey]- {0}\{1} : {2} file(s)[/]" -f $candidate.RelativePath, $candidate.Pattern, $candidate.Count)
+    }
+    $migrateProfileAssets = Read-SpectreConfirm -Message "Migrate these files into '$username' after first logon?"
+}
+
 $logon = Read-SpectreConfirm -Message "Log on as '$username' now?"
 if ($logon) {
+    if ($migrateProfileAssets) {
+        $postLogonScript = Join-Path $PSScriptRoot 'Invoke-ProfileMigrationPostLogon.ps1'
+        $runOncePath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce'
+        $runOnceValue = @(
+            'powershell.exe'
+            '-NoProfile'
+            '-ExecutionPolicy Bypass'
+            ('-File ' + (ConvertTo-SingleQuotedLiteral -Value $postLogonScript))
+            ('-PreviousUserName ' + (ConvertTo-SingleQuotedLiteral -Value $previousUsername))
+            ('-NewUserName ' + (ConvertTo-SingleQuotedLiteral -Value $username))
+            ('-ConfigPath ' + (ConvertTo-SingleQuotedLiteral -Value $migrationConfigPath))
+        ) -join ' '
+        Set-ItemProperty -Path $runOncePath -Name 'OSM_ProfileMigration' -Value $runOnceValue -Type String
+        Write-SpectreHost "[grey]Profile migration queued for first logon of '$username'.[/]"
+    }
+
     $plainPassword = ConvertTo-PlainText -SecureString $securePassword
     $regPath = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
     Set-ItemProperty -Path $regPath -Name 'AutoAdminLogon'    -Value '1'

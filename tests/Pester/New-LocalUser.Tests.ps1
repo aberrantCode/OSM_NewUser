@@ -81,7 +81,8 @@ BeforeAll {
             [string]$EnvFilePath       = '',
             [switch]$ConfirmCreate  = $false,
             [switch]$ConfirmLogon   = $false,
-            [switch]$ConfirmSaveEnv = $false
+            [switch]$ConfirmSaveEnv = $false,
+            [switch]$ConfirmMigrate = $false
         )
 
         # Stash params in global scope so mock scriptblocks can reference them
@@ -91,6 +92,7 @@ BeforeAll {
         $global:mockConfirmCreate    = $ConfirmCreate.IsPresent
         $global:mockConfirmLogon     = $ConfirmLogon.IsPresent
         $global:mockConfirmSaveEnv   = $ConfirmSaveEnv.IsPresent
+        $global:mockConfirmMigrate   = $ConfirmMigrate.IsPresent
 
         # Elevation
         Mock Test-IsElevated { $true }
@@ -118,6 +120,7 @@ BeforeAll {
             param($Message)
             if ($Message -match 'Log on')  { return $global:mockConfirmLogon }
             if ($Message -match 'Save')    { return $global:mockConfirmSaveEnv }
+            if ($Message -match 'Migrate') { return $global:mockConfirmMigrate }
             return $global:mockConfirmCreate
         }
 
@@ -175,10 +178,11 @@ BeforeAll {
 AfterAll {
     # Clean up global variables used by mock scriptblocks to prevent state leakage
     Remove-Variable -Name 'mockEnvFilePath', 'mockExpectedUsername', 'mockConfirmCreate',
-                         'mockConfirmLogon', 'mockConfirmSaveEnv', 'defaultSS', 'userWasCreated',
+                         'mockConfirmLogon', 'mockConfirmSaveEnv', 'mockConfirmMigrate',
+                         'defaultSS', 'userWasCreated',
                          'readHostCount3', 'blankSS3', 'filledSS3',
                          'readHostCount4', 'pass4_1', 'pass4_wrong', 'pass4_2', 'pass4_confirm',
-                         'spectreTextCount5', 'savedEnvContent' `
+                          'spectreTextCount5', 'savedEnvContent' `
                     -Scope Global -ErrorAction SilentlyContinue
 }
 
@@ -645,5 +649,60 @@ Describe 'Get-LocalGroupMember failure is non-fatal — script continues with wa
 
     It 'still calls New-LocalUser before the verification failure' {
         Should -Invoke New-LocalUser -Times 1 -Exactly -Scope Describe
+    }
+}
+
+# ── Scenario 15: Migration matches found and accepted ──────────────────────────
+
+Describe 'Migration matches found and accepted - RunOnce migration command is registered' {
+
+    BeforeAll {
+        $envPath = script:New-TempEnvFile -Password 'MigP@ss1'
+        Set-CommonLocalUserMocks -ExpectedUsername 'miguser1' -EnvFilePath $envPath `
+            -ConfirmCreate -ConfirmLogon -ConfirmMigrate
+
+        Mock Read-Host { [System.Security.SecureString]::new() }
+
+        Mock Test-Path {
+            param($Path, $PathType)
+            if ("$Path" -match 'ProfileMigrationPatterns\.json') { return $true }
+            if ("$Path" -match 'Videos[\\/]ManyCam$') { return $true }
+            if ("$Path" -match 'Policies[\\/]Microsoft[\\/]Windows[\\/]OOBE$') { return $false }
+            return $false
+        }
+
+        Mock Get-Content {
+            param($Path, [switch]$Raw)
+            if ("$Path" -match 'ProfileMigrationPatterns\.json') {
+                return '[{"RelativePath":"Videos\\ManyCam","Pattern":"*.mp4","Recurse":true}]'
+            }
+            return ''
+        }
+
+        Mock Get-ChildItem {
+            param($Path, $Filter, [switch]$File, [switch]$Recurse)
+            if ("$Path" -match 'Videos[\\/]ManyCam$' -and $Filter -eq '*.mp4') {
+                return @([PSCustomObject]@{ FullName = 'C:\Users\old\Videos\ManyCam\clip1.mp4' })
+            }
+            return @()
+        }
+
+        try { & $script:ScriptPath *>$null } catch { }
+    }
+
+    It 'prompts for migration decision when candidate files are detected' {
+        Should -Invoke Read-SpectreConfirm -Scope Describe -ParameterFilter {
+            $Message -match 'Migrate these files'
+        } -Times 1 -Exactly
+    }
+
+    It 'registers an HKLM RunOnce entry for post-logon migration' {
+        Should -Invoke Set-ItemProperty -Scope Describe -ParameterFilter {
+            $Path -eq 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce' -and
+            $Name -eq 'OSM_ProfileMigration' -and
+            $Value -match 'Invoke-ProfileMigrationPostLogon\.ps1' -and
+            $Value -match '-PreviousUserName' -and
+            $Value -match '-NewUserName'
+        } -Times 1 -Exactly
     }
 }
