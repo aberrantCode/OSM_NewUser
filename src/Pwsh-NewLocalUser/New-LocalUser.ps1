@@ -150,7 +150,7 @@ function Get-ProfileMigrationCandidates {
         [string]$ConfigPath
     )
 
-    $results = @()
+    $resultsByPath = @{}
     $rules = Get-ProfileMigrationRules -ConfigPath $ConfigPath
     foreach ($rule in $rules) {
         $sourcePath = Join-Path $CurrentProfilePath $rule.RelativePath
@@ -168,16 +168,23 @@ function Get-ProfileMigrationCandidates {
 
         $matched = @(Get-ChildItem @getChildItemArgs)
         if ($matched.Count -gt 0) {
-            $results += [PSCustomObject]@{
-                RelativePath = $rule.RelativePath
-                Pattern      = $rule.Pattern
-                SourcePath   = $sourcePath
-                Count        = $matched.Count
+            $key = $rule.RelativePath
+            if (-not $resultsByPath.ContainsKey($key)) {
+                $resultsByPath[$key] = [PSCustomObject]@{
+                    RelativePath = $rule.RelativePath
+                    Pattern      = New-Object System.Collections.Generic.List[string]
+                    SourcePath   = $sourcePath
+                    Count        = 0
+                }
             }
+            if (-not $resultsByPath[$key].Pattern.Contains([string]$rule.Pattern)) {
+                $resultsByPath[$key].Pattern.Add([string]$rule.Pattern) | Out-Null
+            }
+            $resultsByPath[$key].Count += $matched.Count
         }
     }
 
-    return $results
+    return $resultsByPath.Values | Sort-Object RelativePath
 }
 
 # ── Main execution ────────────────────────────────────────────────────────────
@@ -326,7 +333,8 @@ if ($migrationCandidates.Count -gt 0) {
     Write-SpectreRule -Title 'Profile Migration'
     Write-SpectreHost "[cyan]Found files under '$previousUsername' that can be migrated after first logon:[/]"
     foreach ($candidate in $migrationCandidates) {
-        Write-SpectreHost ("[grey]- {0}\{1} : {2} file(s)[/]" -f $candidate.RelativePath, $candidate.Pattern, $candidate.Count)
+        $patterns = ($candidate.Pattern | Sort-Object) -join ', '
+        Write-SpectreHost ("[grey]- {0} ({1}) : {2} file(s)[/]" -f $candidate.RelativePath, $patterns, $candidate.Count)
     }
     $migrateProfileAssets = Read-SpectreConfirm -Message "Migrate these files into '$username' after first logon?"
 }

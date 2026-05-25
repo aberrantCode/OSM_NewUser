@@ -6,15 +6,189 @@
     "Recurse": true
   },
   {
-    "Description": "Downloaded PDF files",
+    "Description": "ManyCam photos",
+    "RelativePath": "Pictures\\ManyCam",
+    "Pattern": "*.jpg",
+    "Recurse": true
+  },
+  {
+    "Description": "OneDrive ManyCam photos",
+    "RelativePath": "OneDrive\\Pictures\\ManyCam",
+    "Pattern": "*.jpg",
+    "Recurse": true
+  },
+  {
+    "Description": "Screenshots",
+    "RelativePath": "Pictures\\Screenshots",
+    "Pattern": "*.png",
+    "Recurse": true
+  },
+  {
+    "Description": "OneDrive screenshots",
+    "RelativePath": "OneDrive\\Pictures\\Screenshots",
+    "Pattern": "*.png",
+    "Recurse": true
+  },
+  {
+    "Description": "Top-level videos",
+    "RelativePath": "Videos",
+    "Pattern": "*.mp4",
+    "Recurse": false
+  },
+  {
+    "Description": "Top-level videos",
+    "RelativePath": "Videos",
+    "Pattern": "*.mkv",
+    "Recurse": false
+  },
+  {
+    "Description": "Downloaded PDFs",
     "RelativePath": "Downloads",
     "Pattern": "*.pdf",
+    "Recurse": false
+  },
+  {
+    "Description": "Downloaded Word documents",
+    "RelativePath": "Downloads",
+    "Pattern": "*.doc*",
+    "Recurse": false
+  },
+  {
+    "Description": "Downloaded Excel workbooks",
+    "RelativePath": "Downloads",
+    "Pattern": "*.xls*",
+    "Recurse": false
+  },
+  {
+    "Description": "Downloaded PowerPoint decks",
+    "RelativePath": "Downloads",
+    "Pattern": "*.ppt*",
+    "Recurse": false
+  },
+  {
+    "Description": "Downloaded data files",
+    "RelativePath": "Downloads",
+    "Pattern": "*.csv",
+    "Recurse": false
+  },
+  {
+    "Description": "Downloaded data files",
+    "RelativePath": "Downloads",
+    "Pattern": "*.tsv",
+    "Recurse": false
+  },
+  {
+    "Description": "Downloaded data files",
+    "RelativePath": "Downloads",
+    "Pattern": "*.json",
+    "Recurse": false
+  },
+  {
+    "Description": "Downloaded images",
+    "RelativePath": "Downloads",
+    "Pattern": "*.jpg",
+    "Recurse": false
+  },
+  {
+    "Description": "Downloaded images",
+    "RelativePath": "Downloads",
+    "Pattern": "*.jpeg",
+    "Recurse": false
+  },
+  {
+    "Description": "Downloaded images",
+    "RelativePath": "Downloads",
+    "Pattern": "*.png",
+    "Recurse": false
+  },
+  {
+    "Description": "Downloaded images",
+    "RelativePath": "Downloads",
+    "Pattern": "*.gif",
+    "Recurse": false
+  },
+  {
+    "Description": "Downloaded images",
+    "RelativePath": "Downloads",
+    "Pattern": "*.heic",
+    "Recurse": false
+  },
+  {
+    "Description": "Downloaded videos",
+    "RelativePath": "Downloads",
+    "Pattern": "*.mp4",
+    "Recurse": false
+  },
+  {
+    "Description": "Downloaded archives",
+    "RelativePath": "Downloads",
+    "Pattern": "*.zip",
+    "Recurse": false
+  },
+  {
+    "Description": "Telegram downloads",
+    "RelativePath": "Downloads\\Telegram Desktop",
+    "Pattern": "*.jpg",
+    "Recurse": false
+  },
+  {
+    "Description": "Telegram downloads",
+    "RelativePath": "Downloads\\Telegram Desktop",
+    "Pattern": "*.webp",
+    "Recurse": false
+  },
+  {
+    "Description": "Telegram downloads",
+    "RelativePath": "Downloads\\Telegram Desktop",
+    "Pattern": "*.mp4",
+    "Recurse": false
+  },
+  {
+    "Description": "Telegram downloads",
+    "RelativePath": "Downloads\\Telegram Desktop",
+    "Pattern": "*.zip",
     "Recurse": false
   },
   {
     "Description": "ShareX screen recordings",
     "RelativePath": "Documents\\ShareX\\ScreenRecordings",
     "Pattern": "*.mp4",
+    "Recurse": true
+  },
+  {
+    "Description": "ShareX screenshots",
+    "RelativePath": "Documents\\ShareX\\Screenshots",
+    "Pattern": "*.png",
+    "Recurse": true
+  },
+  {
+    "Description": "ShareX screenshot videos",
+    "RelativePath": "Documents\\ShareX\\Screenshots",
+    "Pattern": "*.mp4",
+    "Recurse": true
+  },
+  {
+    "Description": "ShareX screenshot animations",
+    "RelativePath": "Documents\\ShareX\\Screenshots",
+    "Pattern": "*.gif",
+    "Recurse": true
+  },
+  {
+    "Description": "OneDrive ShareX screenshots",
+    "RelativePath": "OneDrive\\Documents\\ShareX\\Screenshots",
+    "Pattern": "*.png",
+    "Recurse": true
+  },
+  {
+    "Description": "OneDrive ShareX screenshot videos",
+    "RelativePath": "OneDrive\\Documents\\ShareX\\Screenshots",
+    "Pattern": "*.mp4",
+    "Recurse": true
+  },
+  {
+    "Description": "OneDrive ShareX screenshot animations",
+    "RelativePath": "OneDrive\\Documents\\ShareX\\Screenshots",
+    "Pattern": "*.gif",
     "Recurse": true
   }
 ]

@@ -73,10 +73,16 @@ Before the auto-logon prompt, `New-LocalUser.ps1` checks `src/Pwsh-NewLocalUser/
 Default rules include:
 
 - `Videos\ManyCam\*.mp4` (recursive)
-- `Downloads\*.pdf`
+- `Pictures\ManyCam\*.jpg` (recursive)
+- `Pictures\Screenshots\*.png` (recursive)
+- top-level `Videos\*.mp4` and `Videos\*.mkv`
+- top-level `Downloads` content files: PDFs, Office documents, CSV/TSV/JSON data files, common image/video files, and ZIP archives
+- `Downloads\Telegram Desktop` common image/video/archive files
 - `Documents\ShareX\ScreenRecordings\*.mp4` (recursive)
+- `Documents\ShareX\Screenshots` image/video/animation files (recursive)
+- matching OneDrive variants for the ManyCam, Screenshots, and ShareX screenshot folders
 
-If matches are found, the script displays per-rule counts and prompts whether to migrate them for the new user after first sign-in.
+If matches are found, the script displays grouped per-folder counts and prompts whether to migrate them for the new user after first sign-in.
 
 ## How It Works
 
@@ -195,6 +201,11 @@ Log on as 'erik1' now? [y/n]: n
 - auto-elevates if not already elevated
 - grants the new local user modify access to matched source paths (via `icacls`)
 - copies matched files into the same relative subfolders in the new profile
+- renames each migrated file using the taxonomy-style shape `PreviousUserName - Source Folder - Existing Name - CreatedDate.ext`
+  - dates already present in the existing filename, including `YYYYMMDD`, are stripped before the file-created date is appended
+  - source folders are condensed for naming, e.g. `Documents\ShareX\Screenshots\2025-11` becomes `ShareX - Screenshots`
+  - if a destination filename already exists, a numeric suffix is added after the date, e.g. `2026-05-26 1`
+- maintains `Documents\OSM_ProfileMigrationLog.csv` in the new profile with `SourceFilePath`, `DestinationFilePath`, and `DateMoved`
 - writes activity logs (default: `C:\ProgramData\OSM\logs\profile-migration-*.log`)
 - displays migration results to the user
 - prompts whether to remove the previous local user account from the workstation

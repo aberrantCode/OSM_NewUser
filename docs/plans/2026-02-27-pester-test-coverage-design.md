@@ -8,7 +8,7 @@
 
 ## Scope
 
-### In scope (8 scripts)
+### In scope (7 scripts)
 
 | Script | Lines | Path |
 |--------|-------|------|
@@ -19,7 +19,6 @@
 | Diagnose-OsmUserWeb.ps1 | 417 | src/DotNet-DomainWebServer/ |
 | Start-OsmUserWeb.ps1 | 80 | src/DotNet-DomainWebServer/ |
 | New-OSMUser.ps1 | 207 | src/PwshScript/ |
-| Create-Proxmox-AC-SVR1.ps1 | 132 | src/PwshScript/ |
 
 ### Out of scope
 
@@ -177,20 +176,6 @@ Covers `Read-WithDefault` and `Read-NonEmpty`. No changes needed.
 11. Target OU not found → throws
 12. Import-Module fails → throws with RSAT install instructions
 
-### 8. Create-Proxmox-AC-SVR1.Tests.ps1 (new)
-
-**Test scenarios:**
-1. API-token auth — headers contain `PVEAPIToken=`
-2. Username/password auth — POST to /access/ticket, use cookie + CSRF
-3. No ApiTokenId and no Username → Write-Error, exits 2
-4. VM ID already exists → Write-Error, exits 3
-5. VM creation success → writes task ID, starts VM
-6. VM creation failure → Write-Error, exits 4
-7. VM start failure → Write-Error, exits 5
-8. `ConvertFrom-SecureStringToPlain` — null input → returns null
-
----
-
 ## Coverage Limitations (~8–13% uncovered)
 
 - `Grant-LogOnAsServiceRight` P/Invoke C# type definition in Install script (Add-Type block)
@@ -200,7 +185,7 @@ Covers `Read-WithDefault` and `Read-NonEmpty`. No changes needed.
 ## Admin Requirement
 
 Tests for Install, Uninstall, Update, Diagnose need an elevated session.
-Tests for Start, New-OSMUser, Create-Proxmox-AC-SVR1 run without elevation.
+Tests for Start and New-OSMUser run without elevation.
 
 Tests requiring elevation should be tagged `-Tag 'RequiresAdmin'` so they can be skipped in unelevated CI environments.
 
@@ -217,5 +202,4 @@ Tests requiring elevation should be tagged `-Tag 'RequiresAdmin'` so they can be
 | Diagnose-OsmUserWeb.ps1 | 90% |
 | Start-OsmUserWeb.ps1 | 95% |
 | New-OSMUser.ps1 | 92% |
-| Create-Proxmox-AC-SVR1.ps1 | 90% |
 | **Overall** | **~91%** |

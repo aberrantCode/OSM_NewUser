@@ -161,7 +161,6 @@ Get-EventLog -LogName Application -Source OsmUserWeb -Newest 20
 - `Uninstall-OsmUserWeb-Remote.ps1` — Orchestrates remote uninstalls from an admin workstation via PS Remoting. AD account removal runs locally via RSAT; all other steps run on the target server.
 - `Migrate-ToHttpSys.ps1` — Helper to migrate existing deployments to HTTP.sys binding model.
 - `Start-OsmUserWeb.ps1` / `Stop-OsmUserWeb.ps1` — Convenience start/stop and health-check helpers.
-- `src/PwshScript/Create-Proxmox-AC-SVR1.ps1` — Optional: creates a Proxmox VM to host the application (does not install the OS in-guest).
 
 Refer to each script header for usage examples and parameters. Scripts are the recommended approach for repeatable and auditable deployments.
 
