@@ -55,6 +55,7 @@ BeforeAll {
     # These stubs are overridden per-Describe in Set-CommonLocalUserMocks.
     function script:Test-IsElevated { return $true }
     function script:Get-EnvFilePath { return $null }
+    function script:Get-EnvPassword { param([string]$EnvFilePath) return $null }
     function script:Invoke-Reboot   { }
 
     # ── Shared temp .env helpers ──────────────────────────────────────────────
@@ -127,6 +128,18 @@ BeforeAll {
         # .env path resolution — override so script finds our temp file
         Mock Get-EnvFilePath { return $global:mockEnvFilePath }
 
+        # .env password resolution — mocked directly so common Test-Path / Get-Content
+        # stubs (which return $false/'') do not stop Get-EnvPassword from returning the
+        # password. The real temp .env file is read once at mock setup time.
+        if (-not [string]::IsNullOrEmpty($EnvFilePath) -and (Test-Path $EnvFilePath -PathType Leaf)) {
+            $envRaw   = Get-Content -Path $EnvFilePath -Raw -ErrorAction SilentlyContinue
+            $envMatch = [regex]::Match("$envRaw", '(?m)^NEW_USER_PASSWORD=(.+)$')
+            $global:mockEnvPassword = if ($envMatch.Success) { $envMatch.Groups[1].Value.Trim() } else { $null }
+        } else {
+            $global:mockEnvPassword = $null
+        }
+        Mock Get-EnvPassword { return $global:mockEnvPassword }
+
         # Password — Read-Host -AsSecureString returns a matching pair by default
         $global:defaultSS = script:New-SecureStringStub
         Mock Read-Host { return $global:defaultSS }
@@ -167,17 +180,21 @@ BeforeAll {
         Mock Test-Path        { $false }
         Mock New-Item         { }
 
-        # One-shot auto-logon cleanup scheduled task
-        Mock New-ScheduledTaskAction    { [PSCustomObject]@{} }
-        Mock New-ScheduledTaskTrigger   { [PSCustomObject]@{} }
-        Mock New-ScheduledTaskPrincipal { [PSCustomObject]@{} }
+        # One-shot auto-logon cleanup scheduled task.
+        # Note: New-ScheduledTaskAction/Trigger/Principal are intentionally NOT mocked.
+        # Pester's mock cannot return [PSCustomObject] for these builders because
+        # Register-ScheduledTask's -Action/-Trigger/-Principal parameters require
+        # Microsoft.Management.Infrastructure.CimInstance — parameter-binding type
+        # conversion fails before the mock body runs, swallowed by Stop+catch, and
+        # Register-ScheduledTask is never reached. Letting the real builders run
+        # produces correct CimInstance objects with no OS side effects.
         Mock Register-ScheduledTask     { }
     }
 }
 
 AfterAll {
     # Clean up global variables used by mock scriptblocks to prevent state leakage
-    Remove-Variable -Name 'mockEnvFilePath', 'mockExpectedUsername', 'mockConfirmCreate',
+    Remove-Variable -Name 'mockEnvFilePath', 'mockEnvPassword', 'mockExpectedUsername', 'mockConfirmCreate',
                          'mockConfirmLogon', 'mockConfirmSaveEnv', 'mockConfirmMigrate',
                          'defaultSS', 'userWasCreated',
                          'readHostCount3', 'blankSS3', 'filledSS3',
@@ -493,10 +510,10 @@ Describe 'Happy path with auto-logon — registry keys written and logoff called
         }
     }
 
-    It 'does NOT write AutoLogonCount registry value (unreliable in production Windows)' {
+    It 'writes AutoLogonCount registry value for one-shot auto-logon' {
         Should -Invoke Set-ItemProperty -Scope Describe -ParameterFilter {
-            $Name -eq 'AutoLogonCount'
-        } -Times 0 -Exactly
+            $Name -eq 'AutoLogonCount' -and $Value -eq 1
+        } -Times 1 -Exactly
     }
 
     It 'calls Invoke-Reboot to end the current session' {
