@@ -166,13 +166,13 @@ function Get-ProfileMigrationCandidates {
         }
         if ($rule.Recurse) { $getChildItemArgs.Recurse = $true }
 
-        $matches = @(Get-ChildItem @getChildItemArgs)
-        if ($matches.Count -gt 0) {
+        $matched = @(Get-ChildItem @getChildItemArgs)
+        if ($matched.Count -gt 0) {
             $results += [PSCustomObject]@{
                 RelativePath = $rule.RelativePath
                 Pattern      = $rule.Pattern
                 SourcePath   = $sourcePath
-                Count        = $matches.Count
+                Count        = $matched.Count
             }
         }
     }
@@ -345,7 +345,10 @@ if ($logon) {
             ('-NewUserName ' + (ConvertTo-SingleQuotedLiteral -Value $username))
             ('-ConfigPath ' + (ConvertTo-SingleQuotedLiteral -Value $migrationConfigPath))
         ) -join ' '
-        Set-ItemProperty -Path $runOncePath -Name 'OSM_ProfileMigration' -Value $runOnceValue -Type String
+        # '!' prefix tells Winlogon to delete the RunOnce entry only after the command
+        # exits with code 0. Without it, the entry is deleted before execution, so a UAC
+        # denial would lose the migration permanently.
+        Set-ItemProperty -Path $runOncePath -Name '!OSM_ProfileMigration' -Value $runOnceValue -Type String
         Write-SpectreHost "[grey]Profile migration queued for first logon of '$username'.[/]"
     }
 

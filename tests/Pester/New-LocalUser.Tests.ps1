@@ -699,7 +699,7 @@ Describe 'Migration matches found and accepted - RunOnce migration command is re
     It 'registers an HKLM RunOnce entry for post-logon migration' {
         Should -Invoke Set-ItemProperty -Scope Describe -ParameterFilter {
             $Path -eq 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce' -and
-            $Name -eq 'OSM_ProfileMigration' -and
+            $Name -eq '!OSM_ProfileMigration' -and
             $Value -match 'Invoke-ProfileMigrationPostLogon\.ps1' -and
             $Value -match '-PreviousUserName' -and
             $Value -match '-NewUserName'

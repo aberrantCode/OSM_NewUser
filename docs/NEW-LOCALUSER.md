@@ -94,7 +94,7 @@ The script runs in seven sequential phases:
 
 6. **Verification** — reads the account back with `Get-LocalUser` and confirms Administrators membership with `Get-LocalGroupMember`. Results are displayed in a `Format-SpectreTable`.
 
-7. **Profile migration pre-check** — Uses `ProfileMigrationPatterns.json` to scan configured folders in the current profile. If matches are found and accepted, the script registers an `HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce` entry (`OSM_ProfileMigration`) that launches `Invoke-ProfileMigrationPostLogon.ps1` with `-PreviousUserName` and `-NewUserName` (plus config path) on the first logon.
+7. **Profile migration pre-check** — Uses `ProfileMigrationPatterns.json` to scan configured folders in the current profile. If matches are found and accepted, the script registers an `HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce` entry (`!OSM_ProfileMigration` — the leading `!` keeps the entry until the command exits with code 0, so a denied UAC prompt does not lose the migration) that launches `Invoke-ProfileMigrationPostLogon.ps1` with `-PreviousUserName` and `-NewUserName` (plus config path) on the first logon.
 
 8. **Auto-logon offer** — `Read-SpectreConfirm` asks whether to log on as the new account immediately. If confirmed, five registry keys are written under `HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`:
 

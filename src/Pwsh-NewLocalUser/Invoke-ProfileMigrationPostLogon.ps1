@@ -115,13 +115,13 @@ foreach ($rule in $rules) {
         ErrorAction = 'SilentlyContinue'
     }
     if ($rule.Recurse) { $getChildItemArgs.Recurse = $true }
-    $matches = @(Get-ChildItem @getChildItemArgs)
+    $matched = @(Get-ChildItem @getChildItemArgs)
 
-    if ($matches.Count -eq 0) {
+    if ($matched.Count -eq 0) {
         continue
     }
 
-    Write-MigrationLog -Message ("Rule '{0}\{1}' matched {2} file(s)." -f $rule.RelativePath, $rule.Pattern, $matches.Count)
+    Write-MigrationLog -Message ("Rule '{0}\{1}' matched {2} file(s)." -f $rule.RelativePath, $rule.Pattern, $matched.Count)
 
     try {
         if ($PSCmdlet.ShouldProcess($sourcePath, "Grant modify access for $newUserPrincipal")) {
@@ -135,7 +135,7 @@ foreach ($rule in $rules) {
         Write-MigrationLog -Level 'WARN' -Message "Failed to grant ACLs for '$sourcePath': $($_.Exception.Message)"
     }
 
-    foreach ($file in $matches) {
+    foreach ($file in $matched) {
         $relativeFilePath = $file.FullName.Substring($sourcePath.Length).TrimStart('\')
         $destinationRoot = Join-Path $resolvedNewProfile $rule.RelativePath
         $destinationFile = Join-Path $destinationRoot $relativeFilePath
