@@ -5,6 +5,12 @@ BeforeAll {
 
     function script:Test-IsElevated { $true }
     function script:Remove-LocalUser { param([string]$Name) }
+    # Stubs so Pester can mock these — they exist as real cmdlets only on
+    # specific platforms / when called from elevated contexts. The script's
+    # post-removal cleanup calls them; the tests mock them to no-ops.
+    function script:Get-LocalUser { param([string]$Name) return $null }
+    function script:Get-CimInstance { param($ClassName, $Filter) return $null }
+    function script:Remove-CimInstance { param($InputObject) }
 }
 
 Describe 'Invoke-ProfileMigrationPostLogon auto-elevates when needed' {
@@ -30,14 +36,25 @@ Describe 'Invoke-ProfileMigrationPostLogon copies matching files and can remove 
         Mock New-Item { }
         Mock Copy-Item { }
         Mock Remove-LocalUser { }
+        Mock Remove-Item { }
         Mock Read-Host { 'Y' }
         Mock Start-Process { [PSCustomObject]@{ ExitCode = 0 } }
+        Mock Get-LocalUser {
+            param($Name)
+            return [PSCustomObject]@{
+                Name = $Name
+                SID  = [PSCustomObject]@{ Value = 'S-1-5-21-fake-1001' }
+            }
+        }
+        Mock Get-CimInstance { return $null }
+        Mock Remove-CimInstance { }
 
         Mock Test-Path {
             param($Path, $PathType)
             if ("$Path" -eq 'C:\tmp\cfg\ProfileMigrationPatterns.json') { return $true }
             if ("$Path" -eq 'C:\tmp\users\olduser\Videos\ManyCam') { return $true }
             if ("$Path" -eq 'C:\tmp\users\newuser\Videos\ManyCam') { return $false }
+            if ("$Path" -eq 'C:\tmp\users\olduser') { return $true }
             if ("$Path" -eq 'C:\tmp\logs') { return $true }
             return $false
         }
@@ -93,10 +110,88 @@ Describe 'Invoke-ProfileMigrationPostLogon copies matching files and can remove 
     }
 
     It 'prompts to remove the previous user and removes when confirmed' {
-        Should -Invoke Read-Host -Times 1 -Exactly -Scope Describe
         Should -Invoke Remove-LocalUser -Scope Describe -ParameterFilter {
             $Name -eq 'olduser'
         } -Times 1 -Exactly
+    }
+
+    It 'prompts twice when the profile directory still exists after account removal' {
+        # Read-Host #1: remove user? (Y)
+        # Read-Host #2: also remove profile directory? (Y)
+        Should -Invoke Read-Host -Times 2 -Exactly -Scope Describe
+    }
+
+    It 'removes the previous profile directory via Remove-Item fallback when no Win32_UserProfile exists' {
+        # Get-CimInstance returns $null in this scenario, so the script falls
+        # back to a direct Remove-Item on the resolved old profile path.
+        Should -Invoke Remove-Item -Scope Describe -ParameterFilter {
+            $Path -eq 'C:\tmp\users\olduser' -and $Recurse -and $Force
+        } -Times 1 -Exactly
+    }
+}
+
+Describe 'Invoke-ProfileMigrationPostLogon removes profile via Win32_UserProfile when present' {
+    BeforeAll {
+        Mock Test-IsElevated { $true }
+        Mock Add-Content { }
+        Mock Write-Host { }
+        Mock New-Item { }
+        Mock Copy-Item { }
+        Mock Remove-LocalUser { }
+        Mock Remove-Item { }
+        Mock Read-Host { 'Y' }
+        Mock Start-Process { [PSCustomObject]@{ ExitCode = 0 } }
+        Mock Get-LocalUser {
+            param($Name)
+            return [PSCustomObject]@{
+                Name = $Name
+                SID  = [PSCustomObject]@{ Value = 'S-1-5-21-fake-2002' }
+            }
+        }
+        Mock Get-CimInstance {
+            param($ClassName, $Filter)
+            if ($ClassName -eq 'Win32_UserProfile' -and $Filter -like "*S-1-5-21-fake-2002*") {
+                return [PSCustomObject]@{
+                    SID    = 'S-1-5-21-fake-2002'
+                    Loaded = $false
+                }
+            }
+            return $null
+        }
+        Mock Remove-CimInstance { }
+
+        Mock Test-Path {
+            param($Path, $PathType)
+            if ("$Path" -eq 'C:\tmp\cfg\ProfileMigrationPatterns.json') { return $true }
+            if ("$Path" -eq 'C:\tmp\users\olduser') { return $true }
+            return $false
+        }
+
+        Mock Get-Content {
+            param($Path, [switch]$Raw)
+            if ("$Path" -eq 'C:\tmp\cfg\ProfileMigrationPatterns.json') { return '[]' }
+            return ''
+        }
+
+        Mock Get-ChildItem { return @() }
+
+        & $script:ScriptPath `
+            -PreviousUserName 'olduser' `
+            -NewUserName 'newuser' `
+            -ConfigPath 'C:\tmp\cfg\ProfileMigrationPatterns.json' `
+            -PreviousUserProfilePath 'C:\tmp\users\olduser' `
+            -NewUserProfilePath 'C:\tmp\users\newuser' `
+            -LogPath 'C:\tmp\logs\migration.log'
+    }
+
+    It 'removes the Win32_UserProfile (which cleans up both directory and registry)' {
+        Should -Invoke Remove-CimInstance -Times 1 -Exactly -Scope Describe
+    }
+
+    It 'does NOT fall back to Remove-Item when Win32_UserProfile handled the cleanup' {
+        Should -Invoke Remove-Item -Times 0 -Exactly -Scope Describe -ParameterFilter {
+            $Path -eq 'C:\tmp\users\olduser'
+        }
     }
 }
 

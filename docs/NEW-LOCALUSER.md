@@ -209,6 +209,7 @@ Log on as 'erik1' now? [y/n]: n
 - writes activity logs (default: `C:\ProgramData\OSM\logs\profile-migration-*.log`)
 - displays migration results to the user
 - prompts whether to remove the previous local user account from the workstation
+- if the previous account is removed, prompts whether to also delete its profile directory (`C:\Users\<old>`) and `HKLM\...\ProfileList\<SID>` registry entry. Cleanup uses `Win32_UserProfile` via CIM when present (handles junction points and registry in one call) and falls back to `Remove-Item -Recurse` plus orphan registry-key cleanup when no `Win32_UserProfile` record exists.
 
 Useful debug/testing parameters include:
 
@@ -234,3 +235,8 @@ Useful debug/testing parameters include:
 - Added pre-auto-logon detection/prompt for matching files
 - Added RunOnce registration for post-logon migration
 - Added `Invoke-ProfileMigrationPostLogon.ps1` with logging, ACL grant, copy, and optional previous-user removal prompt
+
+### 2026-05-25 — Optional previous-profile-directory cleanup
+
+- Post-logon script: after the previous local user is removed, a follow-up prompt offers to delete `C:\Users\<old>` and its `ProfileList\<SID>` registry entry
+- Uses `Win32_UserProfile` via CIM when available (atomic registry+filesystem cleanup), with `Remove-Item` fallback for orphan profile directories

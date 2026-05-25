@@ -76,6 +76,58 @@ function Write-MigrationLog {
     Write-Host $line -ForegroundColor $color
 }
 
+function Get-UserSidByName {
+    param([Parameter(Mandatory)][string]$UserName)
+    try {
+        $localUser = Get-LocalUser -Name $UserName -ErrorAction Stop
+        return $localUser.SID.Value
+    } catch {
+        return $null
+    }
+}
+
+function Remove-UserProfileDirectory {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [string]$UserSid,
+        [Parameter(Mandatory)][string]$ProfilePath
+    )
+
+    # Preferred path: Win32_UserProfile cleans up both the directory and the
+    # HKLM\...\ProfileList\<SID> registry entry in one CIM operation. It also
+    # handles the junction points / hard-linked legacy folders that a plain
+    # Remove-Item -Recurse trips over.
+    if (-not [string]::IsNullOrWhiteSpace($UserSid)) {
+        $cimProfile = Get-CimInstance -ClassName Win32_UserProfile -Filter "SID='$UserSid'" -ErrorAction SilentlyContinue
+        if ($cimProfile) {
+            if ($cimProfile.Loaded) {
+                throw "Profile for SID '$UserSid' is currently loaded and cannot be removed."
+            }
+            if ($PSCmdlet.ShouldProcess($ProfilePath, "Remove Win32_UserProfile (registry + directory) for SID '$UserSid'")) {
+                Remove-CimInstance -InputObject $cimProfile -ErrorAction Stop
+            }
+            return
+        }
+    }
+
+    # Fallback when no Win32_UserProfile record exists (rare — usually means the
+    # profile was already partially cleaned up): remove the directory ourselves
+    # and best-effort remove the orphaned ProfileList registry entry.
+    if (Test-Path $ProfilePath -PathType Container) {
+        if ($PSCmdlet.ShouldProcess($ProfilePath, 'Remove profile directory')) {
+            Remove-Item -Path $ProfilePath -Recurse -Force -ErrorAction Stop
+        }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($UserSid)) {
+        $profileListKey = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$UserSid"
+        if (Test-Path $profileListKey) {
+            if ($PSCmdlet.ShouldProcess($profileListKey, 'Remove orphaned ProfileList registry entry')) {
+                Remove-Item -Path $profileListKey -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
+
 function Get-MigrationRules {
     param([string]$Path)
     if (-not (Test-Path $Path -PathType Leaf)) {
@@ -364,6 +416,11 @@ Write-Host $summary -ForegroundColor Green
 if (-not $SkipRemovalPrompt -and -not $NonInteractive -and $PreviousUserName -ne $NewUserName) {
     $removeResponse = Read-Host "Remove previous local user '$PreviousUserName' from this workstation? (Y/N)"
     if ($removeResponse -match '^(?i)y(?:es)?$') {
+        # Capture SID *before* Remove-LocalUser so we can later look up the
+        # Win32_UserProfile by SID. After the account is gone Get-LocalUser
+        # can no longer resolve the name.
+        $previousUserSid = Get-UserSidByName -UserName $PreviousUserName
+
         try {
             if ($PSCmdlet.ShouldProcess($PreviousUserName, 'Remove local user')) {
                 Remove-LocalUser -Name $PreviousUserName -ErrorAction Stop
@@ -372,6 +429,26 @@ if (-not $SkipRemovalPrompt -and -not $NonInteractive -and $PreviousUserName -ne
         } catch {
             Write-MigrationLog -Level 'ERROR' -Message "Failed to remove previous local user '$PreviousUserName': $($_.Exception.Message)"
             throw
+        }
+
+        # Offer to also remove the profile directory + ProfileList registry
+        # entry. Without this, the now-orphaned C:\Users\<old> remains on
+        # disk and the SID stays in HKLM\...\ProfileList.
+        $profileDirExists      = Test-Path $resolvedOldProfile -PathType Container
+        $hasProfileListEntry   = (-not [string]::IsNullOrWhiteSpace($previousUserSid)) -and `
+                                 (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$previousUserSid")
+        if ($profileDirExists -or $hasProfileListEntry) {
+            $removeDirResponse = Read-Host "Also remove the previous user's profile directory '$resolvedOldProfile' (and registry entries)? (Y/N)"
+            if ($removeDirResponse -match '^(?i)y(?:es)?$') {
+                try {
+                    Remove-UserProfileDirectory -UserSid $previousUserSid -ProfilePath $resolvedOldProfile
+                    Write-MigrationLog -Message "Removed profile directory '$resolvedOldProfile' for previous user '$PreviousUserName'."
+                } catch {
+                    Write-MigrationLog -Level 'WARN' -Message "Failed to remove profile directory '$resolvedOldProfile': $($_.Exception.Message)"
+                }
+            } else {
+                Write-MigrationLog -Message "Profile directory '$resolvedOldProfile' was kept."
+            }
         }
     } else {
         Write-MigrationLog -Message "Previous user '$PreviousUserName' was kept."
