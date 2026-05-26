@@ -23,7 +23,7 @@ Use the auto-elevating launcher instead of invoking the script directly:
 pwsh -File scripts\Start-App.ps1
 ```
 
-`Start-App.ps1` checks whether the current session is elevated. If not, it re-launches the main script via `Start-Process ... -Verb RunAs`, triggering a UAC prompt. If already elevated it calls `New-LocalUser.ps1` directly in the same session.
+`Start-App.ps1` first checks installed copies for a newer GitHub release. If one is available, it runs the installer with the run prompt suppressed, relaunches the updated launcher, and exits the old copy. It then checks whether the current session is elevated. If not, it re-launches the main script via `Start-Process ... -Verb RunAs`, triggering a UAC prompt. If already elevated it calls `New-LocalUser.ps1` directly in the same session.
 
 ## Manual Invocation
 
