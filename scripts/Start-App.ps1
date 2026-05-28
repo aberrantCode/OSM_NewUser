@@ -136,7 +136,7 @@ $isAdmin = Test-IsElevated
 
 if (-not $isAdmin) {
     # Re-launch with elevation; -Wait keeps the UAC dialog in foreground
-    Start-Process pwsh `
+    Start-Process $psExe `
         -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$target`"" `
         -Verb RunAs `
         -Wait
