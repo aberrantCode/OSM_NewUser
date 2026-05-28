@@ -18,6 +18,16 @@
 
 $ErrorActionPreference = 'Stop'
 
+# Windows PowerShell 5.1 defaults to SSL3/TLS1.0, which GitHub rejects. Force
+# TLS 1.2 so the update-check call below succeeds. No-op on PowerShell 7+.
+if ($PSVersionTable.PSEdition -ne 'Core') {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+}
+
+# Prefer PowerShell 7 (pwsh) but fall back to Windows PowerShell when it is not
+# installed, so elevation relaunches work on a stock machine.
+$psExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) { 'pwsh' } else { 'powershell' }
+
 $scriptRoot = $PSScriptRoot
 $installRoot = (Resolve-Path (Join-Path $scriptRoot '..')).Path
 $target     = Join-Path $scriptRoot '..\src\Pwsh-NewLocalUser\New-LocalUser.ps1'
@@ -86,7 +96,7 @@ function Invoke-UpdateCheck {
 
     if (-not (Test-IsElevated)) {
         Write-Host "New version available (v$latestVersionText). Requesting elevation to update..." -ForegroundColor Cyan
-        Start-Process pwsh `
+        Start-Process $psExe `
             -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" `
             -Verb RunAs `
             -Wait
