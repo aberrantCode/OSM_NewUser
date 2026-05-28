@@ -44,7 +44,7 @@ if (-not (Get-Command Write-AppHost -ErrorAction SilentlyContinue)) {
 # ── Helper: resolve .env file path ───────────────────────────────────────────
 # Declared as a function so Pester can mock it.
 function Get-EnvFilePath {
-    $resolved = Resolve-Path (Join-Path $PSScriptRoot '..\..' '.env') -ErrorAction SilentlyContinue
+    $resolved = Resolve-Path (Join-Path (Join-Path $PSScriptRoot '..\..') '.env') -ErrorAction SilentlyContinue
     if ($resolved) { return $resolved.Path }
     return $null
 }
@@ -213,7 +213,7 @@ if ([string]::IsNullOrEmpty($envFilePath)) {
     $saveEnv = Read-AppConfirm -Message 'No .env file found. Save password to .env for future use?'
     if ($saveEnv) {
         $pwToSave   = ConvertTo-PlainText -SecureString $securePassword
-        $envNewPath = Join-Path $PSScriptRoot '..\..' '.env'
+        $envNewPath = Join-Path (Join-Path $PSScriptRoot '..\..') '.env'
         Set-Content -Path $envNewPath -Value "NEW_USER_PASSWORD=$pwToSave" -Encoding UTF8
         $pwToSave = $null
         Write-AppHost '[green].env file created at solution root.[/]'
