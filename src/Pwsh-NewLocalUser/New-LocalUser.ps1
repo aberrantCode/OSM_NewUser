@@ -34,34 +34,6 @@ if (-not (Test-IsElevated)) {
     throw 'Script must be run as Administrator.'
 }
 
-# ── Update check ───────────────────────────────────────────────────────────────
-# DEV-SAFE: skipped entirely when version.txt is absent (cloned/dev environments).
-$versionFile = Join-Path $PSScriptRoot '..\..' 'version.txt'
-if (Test-Path $versionFile) {
-    $localVersion = (Get-Content $versionFile -Raw -ErrorAction SilentlyContinue).Trim()
-    try {
-        $release = Invoke-RestMethod `
-            -Uri 'https://api.github.com/repos/aberrantCode/OSM_NewUser/releases/latest' `
-            -TimeoutSec 5 `
-            -ErrorAction Stop
-        $latestVersion = $release.tag_name -replace '^v', ''
-        if ($latestVersion -ne $localVersion) {
-            # Plain Write-Host — PwshSpectreConsole not yet imported at this point
-            Write-Host "New version available ($latestVersion). Updating..." -ForegroundColor Cyan
-            $env:OSM_INSTALL_SKIP_RUN_PROMPT = '1'
-            Invoke-Expression (Invoke-RestMethod 'https://raw.githubusercontent.com/aberrantCode/OSM_NewUser/main/install.ps1')
-            # Fully remove the env var rather than setting to empty string
-            [System.Environment]::SetEnvironmentVariable('OSM_INSTALL_SKIP_RUN_PROMPT', $null)
-            # Derive installed root from $PSScriptRoot (src\Pwsh-NewLocalUser → ..\.. = install root)
-            $installedRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-            & (Join-Path $installedRoot 'scripts\Start-App.ps1')
-            return
-        }
-    } catch {
-        # Offline or API error — skip update check silently
-    }
-}
-
 # ── Spectre Console ───────────────────────────────────────────────────────────
 $OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $env:IgnoreSpectreEncoding = $true   # we set UTF-8 above; suppress the module warning
