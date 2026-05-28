@@ -16,7 +16,7 @@
     auto-logon (one-time) and immediately reboots the machine.
 
 .NOTES
-    Requires: PowerShell 5.1+, admin elevation, PwshSpectreConsole module.
+    Requires: PowerShell 5.1+, admin elevation.
     Run via: scripts\Start-App.ps1  (auto-elevates if needed)
 #>
 
@@ -34,15 +34,17 @@ if (-not (Test-IsElevated)) {
     throw 'Script must be run as Administrator.'
 }
 
-# ── Spectre Console ───────────────────────────────────────────────────────────
+# ── Console UI ───────────────────────────────────────────────────────────
 $OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
-$env:IgnoreSpectreEncoding = $true   # we set UTF-8 above; suppress the module warning
-Import-Module PwshSpectreConsole -ErrorAction Stop
+# Guarded so the Pester suite can pre-load and mock these helpers.
+if (-not (Get-Command Write-AppHost -ErrorAction SilentlyContinue)) {
+    . (Join-Path $PSScriptRoot 'ConsoleUI.ps1')
+}
 
 # ── Helper: resolve .env file path ───────────────────────────────────────────
 # Declared as a function so Pester can mock it.
 function Get-EnvFilePath {
-    $resolved = Resolve-Path (Join-Path $PSScriptRoot '..\..' '.env') -ErrorAction SilentlyContinue
+    $resolved = Resolve-Path (Join-Path (Join-Path $PSScriptRoot '..\..') '.env') -ErrorAction SilentlyContinue
     if ($resolved) { return $resolved.Path }
     return $null
 }
@@ -105,7 +107,7 @@ function Get-ProfileMigrationRules {
         $raw = Get-Content -Path $ConfigPath -Raw -ErrorAction Stop
         $parsed = ConvertFrom-Json -InputObject $raw -ErrorAction Stop
     } catch {
-        Write-SpectreHost "[yellow]Warning: Could not parse migration config '$ConfigPath'. Profile migration will be skipped.[/]"
+        Write-AppHost "[yellow]Warning: Could not parse migration config '$ConfigPath'. Profile migration will be skipped.[/]"
         return @()
     }
 
@@ -160,25 +162,25 @@ function Get-ProfileMigrationCandidates {
 }
 
 # ── Main execution ────────────────────────────────────────────────────────────
-Write-SpectreFigletText -Text 'New Local User'
+Show-AppBanner -Text 'New Local User'
 
 # ── Phase 2: Password resolution ─────────────────────────────────────────────
-Write-SpectreRule -Title 'Password'
+Show-AppRule -Title 'Password'
 
 $envFilePath = Get-EnvFilePath
 $envPlain    = Get-EnvPassword -EnvFilePath $envFilePath
 
 if ($envPlain) {
-    Write-SpectreHost '[grey].env file found — press [bold]Enter[/] to use stored password.[/]'
+    Write-AppHost '[grey].env file found — press [bold]Enter[/] to use stored password.[/]'
 } else {
-    Write-SpectreHost '[yellow]Warning: No .env file found. You must enter a password.[/]'
-    Write-SpectreHost '[grey]  (Press Ctrl+C at any time to cancel.)[/]'
+    Write-AppHost '[yellow]Warning: No .env file found. You must enter a password.[/]'
+    Write-AppHost '[grey]  (Press Ctrl+C at any time to cancel.)[/]'
 }
 
 $securePassword = $null
 
 while ($null -eq $securePassword) {
-    Write-SpectreHost 'Password: ' -NoNewline
+    Write-AppHost 'Password: ' -NoNewline
     $inputSecure = Read-Host -AsSecureString
 
     $inputPlain = ConvertTo-PlainText -SecureString $inputSecure
@@ -188,17 +190,17 @@ while ($null -eq $securePassword) {
             # blank + .env present → use .env value
             $securePassword = ConvertTo-SecureString -String $envPlain -AsPlainText -Force
         } else {
-            Write-SpectreHost '[red]Password cannot be blank when no .env file is present.[/]'
+            Write-AppHost '[red]Password cannot be blank when no .env file is present.[/]'
             # loop continues
         }
     } else {
         # Non-blank: require confirmation
-        Write-SpectreHost 'Confirm password: ' -NoNewline
+        Write-AppHost 'Confirm password: ' -NoNewline
         $confirmSecure = Read-Host -AsSecureString
         $confirmPlain  = ConvertTo-PlainText -SecureString $confirmSecure
 
         if ($inputPlain -ne $confirmPlain) {
-            Write-SpectreHost '[red]Passwords do not match. Please try again.[/]'
+            Write-AppHost '[red]Passwords do not match. Please try again.[/]'
             # loop continues
         } else {
             $securePassword = $inputSecure
@@ -208,40 +210,40 @@ while ($null -eq $securePassword) {
 
 # Offer to persist the interactively-entered password to a new .env file
 if ([string]::IsNullOrEmpty($envFilePath)) {
-    $saveEnv = Read-SpectreConfirm -Message 'No .env file found. Save password to .env for future use?'
+    $saveEnv = Read-AppConfirm -Message 'No .env file found. Save password to .env for future use?'
     if ($saveEnv) {
         $pwToSave   = ConvertTo-PlainText -SecureString $securePassword
-        $envNewPath = Join-Path $PSScriptRoot '..\..' '.env'
+        $envNewPath = Join-Path (Join-Path $PSScriptRoot '..\..') '.env'
         Set-Content -Path $envNewPath -Value "NEW_USER_PASSWORD=$pwToSave" -Encoding UTF8
         $pwToSave = $null
-        Write-SpectreHost '[green].env file created at solution root.[/]'
+        Write-AppHost '[green].env file created at solution root.[/]'
     }
 }
 
 # ── Phase 3: Username resolution ─────────────────────────────────────────────
-Write-SpectreRule -Title 'Username'
+Show-AppRule -Title 'Username'
 
 $baseName  = Get-BaseName
 $suggested = Get-NextUsername -BaseName $baseName
 
 $username = $null
 while ($null -eq $username) {
-    $rawInput = Read-SpectreText -Message 'Username' -DefaultAnswer $suggested
+    $rawInput = Read-AppText -Message 'Username' -DefaultAnswer $suggested
     $trimmed  = $rawInput.Trim()
     if ([string]::IsNullOrWhiteSpace($trimmed)) {
-        Write-SpectreHost '[red]Username cannot be blank.[/]'
+        Write-AppHost '[red]Username cannot be blank.[/]'
         continue
     }
     $existing = try { Get-LocalUser -Name $trimmed -ErrorAction Stop } catch { $null }
     if ($null -ne $existing) {
-        Write-SpectreHost "[red]'$trimmed' is already in use. Choose a different username.[/]"
+        Write-AppHost "[red]'$trimmed' is already in use. Choose a different username.[/]"
         continue
     }
     $username = $trimmed
 }
 
 # ── Phase 4: Confirmation ─────────────────────────────────────────────────────
-Write-SpectreRule -Title 'Confirm'
+Show-AppRule -Title 'Confirm'
 
 $summaryText = (@(
     "Username                 : $username"
@@ -251,18 +253,18 @@ $summaryText = (@(
     "Computer                 : $env:COMPUTERNAME"
 ) -join "`n")
 
-Format-SpectrePanel -Header 'New User Summary' -Data $summaryText
+Show-AppSummary -Header 'New User Summary' -Data $summaryText
 
-$confirmed = Read-SpectreConfirm -Message 'Create this user?'
+$confirmed = Read-AppConfirm -Message 'Create this user?'
 if (-not $confirmed) {
-    Write-SpectreHost '[yellow]Aborted.[/]'
+    Write-AppHost '[yellow]Aborted.[/]'
     return
 }
 
 # ── Phase 5: User creation ────────────────────────────────────────────────────
 $createUsername = $username
 $createPassword = $securePassword
-Invoke-SpectreCommandWithStatus -Title 'Creating local user...' -ScriptBlock {
+Invoke-AppStatus -Title 'Creating local user...' -ScriptBlock {
     $null = New-LocalUser `
         -Name $createUsername `
         -Password $createPassword `
@@ -270,10 +272,10 @@ Invoke-SpectreCommandWithStatus -Title 'Creating local user...' -ScriptBlock {
         -UserMayNotChangePassword:$true
 
     Add-LocalGroupMember -Group 'Administrators' -Member $createUsername
-} -Spinner Dots
+}
 
 # ── Phase 6: Verification ─────────────────────────────────────────────────────
-Write-SpectreRule -Title 'Verification'
+Show-AppRule -Title 'Verification'
 
 $verifiedUser  = Get-LocalUser -Name $username
 $groupMembers = try {
@@ -282,7 +284,7 @@ $groupMembers = try {
     # Error 1789 (trust failure) occurs on domain-joined machines when the DC is
     # unreachable and domain accounts exist in the local group. Creation succeeded;
     # only verification is affected.
-    Write-SpectreHost "[yellow]Warning: Could not verify group membership ($_). Account was added successfully.[/]"
+    Write-AppHost "[yellow]Warning: Could not verify group membership ($_). Account was added successfully.[/]"
     $null
 }
 $isMember = $groupMembers | Where-Object { $_.Name -like "*\$username" }
@@ -293,7 +295,7 @@ $isMember = $groupMembers | Where-Object { $_.Name -like "*\$username" }
     PasswordNeverExpires     = $null -eq $verifiedUser.PasswordExpires
     UserMayNotChangePassword = -not $verifiedUser.UserMayChangePassword
     'Member of Administrators' = if ($null -eq $groupMembers) { 'Unknown' } elseif ($isMember) { 'Yes' } else { 'No' }
-} | Format-SpectreTable
+} | Format-Table -AutoSize
 
 # ── Phase 7: Auto-logon offer ─────────────────────────────────────────────────
 $previousUsername     = $env:USERNAME
@@ -302,16 +304,16 @@ $migrationCandidates  = Get-ProfileMigrationCandidates -CurrentProfilePath $env:
 $migrateProfileAssets = $false
 
 if ($migrationCandidates.Count -gt 0) {
-    Write-SpectreRule -Title 'Profile Migration'
-    Write-SpectreHost "[cyan]Found files under '$previousUsername' that can be migrated after first logon:[/]"
+    Show-AppRule -Title 'Profile Migration'
+    Write-AppHost "[cyan]Found files under '$previousUsername' that can be migrated after first logon:[/]"
     foreach ($candidate in $migrationCandidates) {
         $patterns = ($candidate.Pattern | Sort-Object) -join ', '
-        Write-SpectreHost ("[grey]- {0} ({1}) : {2} file(s)[/]" -f $candidate.RelativePath, $patterns, $candidate.Count)
+        Write-AppHost ("[grey]- {0} ({1}) : {2} file(s)[/]" -f $candidate.RelativePath, $patterns, $candidate.Count)
     }
-    $migrateProfileAssets = Read-SpectreConfirm -Message "Migrate these files into '$username' after first logon?"
+    $migrateProfileAssets = Read-AppConfirm -Message "Migrate these files into '$username' after first logon?"
 }
 
-$logon = Read-SpectreConfirm -Message "Log on as '$username' now?"
+$logon = Read-AppConfirm -Message "Log on as '$username' now?"
 if ($logon) {
     if ($migrateProfileAssets) {
         $postLogonScript = Join-Path $PSScriptRoot 'Invoke-ProfileMigrationPostLogon.ps1'
@@ -329,7 +331,7 @@ if ($logon) {
         # exits with code 0. Without it, the entry is deleted before execution, so a UAC
         # denial would lose the migration permanently.
         Set-ItemProperty -Path $runOncePath -Name '!OSM_ProfileMigration' -Value $runOnceValue -Type String
-        Write-SpectreHost "[grey]Profile migration queued for first logon of '$username'.[/]"
+        Write-AppHost "[grey]Profile migration queued for first logon of '$username'.[/]"
     }
 
     $plainPassword = ConvertTo-PlainText -SecureString $securePassword
@@ -375,6 +377,6 @@ Unregister-ScheduledTask -TaskName 'OSM_ClearAutoLogon' -Confirm:`$false -ErrorA
     Register-ScheduledTask -TaskName 'OSM_ClearAutoLogon' `
         -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
 
-    Write-SpectreHost '[grey]Auto-logon configured (one-time). Rebooting now...[/]'
+    Write-AppHost '[grey]Auto-logon configured (one-time). Rebooting now...[/]'
     Invoke-Reboot
 }

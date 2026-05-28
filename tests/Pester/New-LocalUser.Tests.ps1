@@ -6,19 +6,19 @@
 .DESCRIPTION
     The source script:
       1. Checks for admin elevation via Test-IsElevated helper.
-      2. Imports PwshSpectreConsole.
+      2. Dot-sources ConsoleUI.ps1 helpers.
       3. Reads .env file for NEW_USER_PASSWORD.
       4. Prompts for password via Read-Host -AsSecureString.
       5. Derives base name from env:USERNAME (strips trailing digits).
       6. Queries local users via Get-LocalUser to compute next username.
-      7. Prompts for username via Read-SpectreText.
+      7. Prompts for username via Read-AppText.
       8. Validates username is not already in use.
-      9. Displays summary panel via Format-SpectrePanel.
-     10. Prompts for confirmation via Read-SpectreConfirm.
-     11. Creates user via Invoke-SpectreCommandWithStatus wrapping New-LocalUser.
+      9. Displays summary panel via Show-AppSummary.
+     10. Prompts for confirmation via Read-AppConfirm.
+     11. Creates user via Invoke-AppStatus wrapping New-LocalUser.
      12. Adds to Administrators via Add-LocalGroupMember.
      13. Verifies creation via Get-LocalUser + Get-LocalGroupMember.
-     14. Offers auto-logon prompt via Read-SpectreConfirm.
+     14. Offers auto-logon prompt via Read-AppConfirm.
      15. Writes registry keys via Set-ItemProperty and calls Invoke-Reboot.
 
     Invocation model:
@@ -33,7 +33,7 @@
       2.  .env file present — password loaded, blank Read-Host accepted.
       3.  No .env file — user enters password; loops once on blank, succeeds second call.
       4.  Password confirm mismatch — Read-Host called again until match.
-      5.  Username already in use — Read-SpectreText called again with valid name.
+      5.  Username already in use — Read-AppText called again with valid name.
       6.  User aborts at creation confirmation — New-LocalUser NOT called.
       7.  Happy path — all steps succeed, user declines auto-logon.
       8.  Happy path with auto-logon — registry keys written, Invoke-Reboot called.
@@ -45,10 +45,9 @@
 BeforeAll {
     $script:ScriptPath = Join-Path $PSScriptRoot '..\..\src\Pwsh-NewLocalUser\New-LocalUser.ps1'
 
-    # ── Load PwshSpectreConsole so Spectre cmdlets exist for mocking ──────────
+    # ── Load native ConsoleUI helpers so they exist for mocking ───────────────
     $OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
-    $env:IgnoreSpectreEncoding = $true
-    Import-Module PwshSpectreConsole -ErrorAction Stop
+    . (Join-Path $PSScriptRoot '..\..\src\Pwsh-NewLocalUser\ConsoleUI.ps1')
 
     # ── Stub SUT-internal functions so Pester can mock them ───────────────────
     # Pester requires the command to exist at mock-registration time.
@@ -98,26 +97,21 @@ BeforeAll {
         # Elevation
         Mock Test-IsElevated { $true }
 
-        # Spectre import (no-op — module already loaded in test session)
-        Mock Import-Module { }
+        # Native UI output — suppress all display
+        Mock Show-AppBanner  { }
+        Mock Show-AppRule    { }
+        Mock Write-AppHost   { }
+        Mock Show-AppSummary { }
 
-        # Spectre output — suppress all display
-        Mock Write-SpectreFigletText  { }
-        Mock Write-SpectreRule        { }
-        Mock Write-SpectreHost        { }
-        Mock Format-SpectrePanel      { }
-        Mock Format-SpectreTable      { }
-        Mock Out-SpectreHost          { }
-
-        # Spectre spinner — must actually run its Task scriptblock
-        Mock Invoke-SpectreCommandWithStatus {
-            param($Title, $ScriptBlock, $Spinner, $Color, $SpinnerStyle)
+        # Status wrapper — must actually run its scriptblock
+        Mock Invoke-AppStatus {
+            param($Title, $ScriptBlock)
             & $ScriptBlock
         }
 
-        # Spectre prompts — return the expected username for Phase 3 validation
-        Mock Read-SpectreText { $global:mockExpectedUsername }
-        Mock Read-SpectreConfirm {
+        # Prompts — return the expected username for Phase 3 validation
+        Mock Read-AppText { $global:mockExpectedUsername }
+        Mock Read-AppConfirm {
             param($Message)
             if ($Message -match 'Log on')  { return $global:mockConfirmLogon }
             if ($Message -match 'Save')    { return $global:mockConfirmSaveEnv }
@@ -248,7 +242,7 @@ Describe '.env file present — blank Read-Host response uses env password' {
     }
 
     It 'password phase completes — script does not throw during password resolution' {
-        Should -Invoke Write-SpectreHost -Scope Describe -ParameterFilter {
+        Should -Invoke Write-AppHost -Scope Describe -ParameterFilter {
             $Message -match '\.env file found'
         }
     }
@@ -284,7 +278,7 @@ Describe 'No .env file — blank password prompt loops until value entered' {
     }
 
     It 'displays blank-password error when no .env file present' {
-        Should -Invoke Write-SpectreHost -Scope Describe -ParameterFilter {
+        Should -Invoke Write-AppHost -Scope Describe -ParameterFilter {
             $Message -match 'cannot be blank'
         }
     }
@@ -327,7 +321,7 @@ Describe 'Password confirm mismatch causes re-prompt until passwords match' {
     }
 
     It 'displays password mismatch error on mismatched confirm' {
-        Should -Invoke Write-SpectreHost -Scope Describe -ParameterFilter {
+        Should -Invoke Write-AppHost -Scope Describe -ParameterFilter {
             $Message -match 'do not match'
         }
     }
@@ -340,13 +334,13 @@ Describe 'Password confirm mismatch causes re-prompt until passwords match' {
 
 # ── Scenario 5: Username already in use — re-prompted ────────────────────────
 
-Describe 'Username already in use causes Read-SpectreText to be called again' {
+Describe 'Username already in use causes Read-AppText to be called again' {
 
     BeforeAll {
         Set-CommonLocalUserMocks -ExpectedUsername 'freeuser1' -ConfirmCreate
 
         $global:spectreTextCount5 = 0
-        Mock Read-SpectreText {
+        Mock Read-AppText {
             $global:spectreTextCount5++
             if ($global:spectreTextCount5 -eq 1) { return 'inuseuser' }
             return 'freeuser1'
@@ -373,7 +367,7 @@ Describe 'Username already in use causes Read-SpectreText to be called again' {
         try { & $script:ScriptPath *>$null } catch { }
     }
 
-    It 'calls Read-SpectreText twice — once for in-use name, once for valid name' {
+    It 'calls Read-AppText twice — once for in-use name, once for valid name' {
         $global:spectreTextCount5 | Should -Be 2
     }
 
@@ -596,8 +590,8 @@ Describe 'Not elevated — throws with elevation error message' {
         Should -Invoke New-LocalUser -Times 0 -Exactly -Scope Describe
     }
 
-    It 'does NOT call Import-Module when not elevated' {
-        Should -Invoke Import-Module -Times 0 -Exactly -Scope Describe
+    It 'does NOT render UI (banner) when not elevated' {
+        Should -Invoke Show-AppBanner -Times 0 -Exactly -Scope Describe
     }
 }
 
@@ -659,7 +653,7 @@ Describe 'Get-LocalGroupMember failure is non-fatal — script continues with wa
     }
 
     It 'displays a yellow warning about the group membership verification failure' {
-        Should -Invoke Write-SpectreHost -Scope Describe -ParameterFilter {
+        Should -Invoke Write-AppHost -Scope Describe -ParameterFilter {
             $Message -match '\[yellow\]' -and $Message -match 'verify group membership'
         }
     }
@@ -708,7 +702,7 @@ Describe 'Migration matches found and accepted - RunOnce migration command is re
     }
 
     It 'prompts for migration decision when candidate files are detected' {
-        Should -Invoke Read-SpectreConfirm -Scope Describe -ParameterFilter {
+        Should -Invoke Read-AppConfirm -Scope Describe -ParameterFilter {
             $Message -match 'Migrate these files'
         } -Times 1 -Exactly
     }
