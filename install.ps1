@@ -16,6 +16,12 @@
 
 $ErrorActionPreference = 'Stop'
 
+# Windows PowerShell 5.1 defaults to SSL3/TLS1.0, which GitHub rejects. Force
+# TLS 1.2 so the API/download calls below succeed. No-op on PowerShell 7+.
+if ($PSVersionTable.PSEdition -ne 'Core') {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+}
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 $InstallDir   = 'C:\osm\new-localuser'
 $ApiUrl       = 'https://api.github.com/repos/aberrantCode/OSM_NewUser/releases/latest'
@@ -26,8 +32,11 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
     [Security.Principal.WindowsBuiltInRole]::Administrator)
 
 if (-not $isAdmin) {
+    # Prefer PowerShell 7 (pwsh) but fall back to Windows PowerShell when it is
+    # not installed, so the one-liner works on a stock machine.
+    $psExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) { 'pwsh' } else { 'powershell' }
     $oneLiner = "Invoke-Expression (Invoke-RestMethod '$RawInstallerUrl')"
-    Start-Process pwsh `
+    Start-Process $psExe `
         -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"$oneLiner`"" `
         -Verb RunAs `
         -Wait
@@ -88,11 +97,9 @@ if ($installedVersion -eq $version) {
     }
 
     # ── Step 5: Install ───────────────────────────────────────────────────────
-    # Only remove old install AFTER successful download
-    if (Test-Path $InstallDir) {
-        Remove-Item -Path $InstallDir -Recurse -Force
-    }
-
+    # Extract and validate into staging FIRST. Only after we have a confirmed,
+    # well-formed payload do we touch the existing install — so a failed download
+    # or malformed ZIP can never leave the machine with no install.
     $stagingDir = Join-Path $env:TEMP "OSM_NewUser-staging-$tag"
     if (Test-Path $stagingDir) { Remove-Item $stagingDir -Recurse -Force }
 
@@ -103,9 +110,22 @@ if ($installedVersion -eq $version) {
 
     if (-not $extractedRoot) {
         Write-Warning 'Unexpected ZIP structure: no root folder found.'
+        Write-Warning 'Existing install left untouched.'
         Remove-Item -Path $zipPath    -Force -ErrorAction SilentlyContinue
         Remove-Item -Path $stagingDir -Recurse -Force -ErrorAction SilentlyContinue
         exit 1
+    }
+
+    # Payload is good — now swap it in.
+    if (Test-Path $InstallDir) {
+        Remove-Item -Path $InstallDir -Recurse -Force
+    }
+
+    # Move-Item does not create missing parent directories, so on a first-time
+    # install (where C:\osm does not exist yet) we must create the parent first.
+    $installParent = Split-Path -Path $InstallDir -Parent
+    if (-not (Test-Path $installParent)) {
+        New-Item -ItemType Directory -Path $installParent -Force | Out-Null
     }
 
     Move-Item -Path $extractedRoot.FullName -Destination $InstallDir
@@ -143,13 +163,21 @@ if ($installedVersion -eq $version) {
             }
         }
 
-        # Merge: backup values take priority; new keys from example get defaults
+        # Merge: backup values take priority; new keys from example get defaults.
         $merged = [System.Collections.Generic.List[string]]::new()
         foreach ($key in $exampleDict.Keys) {
             if ($backupDict.ContainsKey($key)) {
                 $merged.Add("$key=$($backupDict[$key])")
             } else {
                 $merged.Add("$key=$($exampleDict[$key])")
+            }
+        }
+        # Preserve any user-defined keys not present in .env.example so a reinstall
+        # never silently drops them (and so the file is never emptied if the new
+        # release happens to ship without a .env.example).
+        foreach ($key in $backupDict.Keys) {
+            if (-not $exampleDict.ContainsKey($key)) {
+                $merged.Add("$key=$($backupDict[$key])")
             }
         }
 
