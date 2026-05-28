@@ -6,14 +6,7 @@ A PowerShell utility that creates a new numbered local administrator account on 
 
 - **Windows PowerShell 5.1+**
 - **Administrator elevation** (the script will refuse to run without it)
-- **PwshSpectreConsole module v2.3.0+** — provides the interactive UI
 - **Microsoft.PowerShell.LocalAccounts module** — built into Windows; no installation required
-
-### Installing PwshSpectreConsole
-
-```powershell
-Install-Module PwshSpectreConsole -RequiredVersion 2.3.0 -Scope CurrentUser
-```
 
 ## Quick Start (Recommended)
 
@@ -92,17 +85,17 @@ The script runs in seven sequential phases:
 
 2. **Password resolution** — loads `NEW_USER_PASSWORD` from `.env` if present. Enters an interactive loop (see table above) until a valid `SecureString` password is confirmed.
 
-3. **Username resolution** — strips trailing digits from `$env:USERNAME` to derive a base name (e.g., `erik80` → `erik`), then scans existing local accounts for names matching `^<base>\d+$` and increments the highest number by 1 (starts at 1 if none exist). Presents the suggested name via `Read-SpectreText` with a default answer. Loops if the input is blank or the name is already in use.
+3. **Username resolution** — strips trailing digits from `$env:USERNAME` to derive a base name (e.g., `erik80` → `erik`), then scans existing local accounts for names matching `^<base>\d+$` and increments the highest number by 1 (starts at 1 if none exist). Presents the suggested name via `Read-AppText` with a default answer. Loops if the input is blank or the name is already in use.
 
-4. **Confirmation panel** — displays a `Format-SpectrePanel` summary showing the proposed username, fixed account properties, target group, and computer name. Prompts `Read-SpectreConfirm` — answering No aborts with no changes made.
+4. **Confirmation panel** — displays a `Show-AppSummary` summary showing the proposed username, fixed account properties, target group, and computer name. Prompts `Read-AppConfirm` — answering No aborts with no changes made.
 
-5. **User creation** — runs inside `Invoke-SpectreCommandWithStatus` (spinner). Calls `New-LocalUser` with `PasswordNeverExpires` and `UserMayNotChangePassword` set, then `Add-LocalGroupMember -Group Administrators`. A failure in either cmdlet is fatal (`$ErrorActionPreference = 'Stop'`).
+5. **User creation** — runs inside `Invoke-AppStatus` (status line). Calls `New-LocalUser` with `PasswordNeverExpires` and `UserMayNotChangePassword` set, then `Add-LocalGroupMember -Group Administrators`. A failure in either cmdlet is fatal (`$ErrorActionPreference = 'Stop'`).
 
-6. **Verification** — reads the account back with `Get-LocalUser` and confirms Administrators membership with `Get-LocalGroupMember`. Results are displayed in a `Format-SpectreTable`.
+6. **Verification** — reads the account back with `Get-LocalUser` and confirms Administrators membership with `Get-LocalGroupMember`. Results are displayed in a `Format-Table`.
 
 7. **Profile migration pre-check** — Uses `ProfileMigrationPatterns.json` to scan configured folders in the current profile. If matches are found and accepted, the script registers an `HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce` entry (`!OSM_ProfileMigration` — the leading `!` keeps the entry until the command exits with code 0, so a denied UAC prompt does not lose the migration) that launches `Invoke-ProfileMigrationPostLogon.ps1` with `-PreviousUserName` and `-NewUserName` (plus config path) on the first logon.
 
-8. **Auto-logon offer** — `Read-SpectreConfirm` asks whether to log on as the new account immediately. If confirmed, five registry keys are written under `HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`:
+8. **Auto-logon offer** — `Read-AppConfirm` asks whether to log on as the new account immediately. If confirmed, five registry keys are written under `HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`:
 
    | Key | Value set |
    |---|---|
@@ -133,65 +126,61 @@ Every account created by this script has the following properties:
 | Scenario | Behaviour |
 |---|---|
 | Not running as Administrator | Red error message + terminating throw; no UI is shown |
-| PwshSpectreConsole not installed | `Import-Module` throws; script terminates |
-| Blank password with no `.env` | Red Spectre message; password loop repeats |
-| Password confirmation mismatch | Red Spectre message; password loop repeats |
-| Blank username entered | Red Spectre message; username loop repeats |
-| Username already in use | Red Spectre message; username loop repeats |
+| Blank password with no `.env` | Red message; password loop repeats |
+| Password confirmation mismatch | Red message; password loop repeats |
+| Blank username entered | Red message; username loop repeats |
+| Username already in use | Red message; username loop repeats |
 | User cancels at confirmation prompt | Yellow abort message; no account created |
 | `New-LocalUser` fails | Terminating error (fatal) |
 | `Add-LocalGroupMember` fails | Terminating error (fatal) |
 
-## Spectre Console UI
+## Console UI
 
-The script uses PwshSpectreConsole for all interactive output:
+The script uses native ConsoleUI helpers (dot-sourced from `ConsoleUI.ps1`) for all interactive output:
 
 | Element | Purpose |
 |---|---|
-| `Write-SpectreFigletText` | Large "New Local User" banner at startup |
-| `Write-SpectreRule` | Section dividers (Password, Username, Confirm, Verification) |
-| `Write-SpectreHost` | Styled status and error messages |
-| `Read-SpectreText` | Username prompt with pre-filled default answer |
-| `Read-SpectreConfirm` | Yes/No prompts for confirmation and auto-logon offer |
-| `Format-SpectrePanel` | Confirmation summary panel before account creation |
-| `Invoke-SpectreCommandWithStatus` | Spinner during account creation |
-| `Format-SpectreTable` | Post-creation verification table |
+| `Show-AppBanner` | "New Local User" banner at startup |
+| `Show-AppRule` | Section dividers (Password, Username, Confirm, Verification) |
+| `Write-AppHost` | Styled status and error messages (colored via `[color]...[/]` markup) |
+| `Read-AppText` | Username prompt with pre-filled default answer |
+| `Read-AppConfirm` | Yes/No prompts for confirmation and auto-logon offer (default Yes) |
+| `Show-AppSummary` | Confirmation summary before account creation |
+| `Invoke-AppStatus` | Status line during account creation |
+| `Format-Table` | Post-creation verification table |
 
-UTF-8 encoding is set explicitly on startup and `$env:IgnoreSpectreEncoding = $true` suppresses the module's own encoding warning.
+UTF-8 encoding is set explicitly on startup; the helpers are dot-sourced from `ConsoleUI.ps1` and need no external module.
 
 ## Example Session
 
 ```
- _   _               _                    _   _   _
-| \ | |  ___ __  __ | |      ___    ___  | | | | | |  ___   ___  _ __
-|  \| | / _ \\ \/ / | |     / _ \  / __| | | | | | | / __| / _ \| '__|
-| |\  ||  __/ >  <  | |___ | (_) || (__  | |_| |_| | \__ \|  __/| |
-|_| \_| \___|/_/\_\ |_____| \___/  \___|  \___/\___/ |___/ \___||_|
+===============  New Local User  ===============
 
-──────────────────────────── Password ────────────────────────────
+--- Password ---
 .env file found — press Enter to use stored password.
 Password:
 
-──────────────────────────── Username ────────────────────────────
+--- Username ---
 Username [erik1]:
 
-──────────────────────────── Confirm ─────────────────────────────
-╭─ New User Summary ──────────────────────────────────────────╮
-│ Username                 erik1                               │
-│ PasswordNeverExpires     True                                │
-│ UserMayNotChangePassword True                                │
-│ Group                    Administrators                      │
-│ Computer                 WORKSTATION01                       │
-╰─────────────────────────────────────────────────────────────╯
-Create this user? [y/n]: y
+--- Confirm ---
+New User Summary
+  Username                 : erik1
+  Password Never Expires   : True
+  User May Not Change Pwd  : True
+  Group                    : Administrators
+  Computer                 : WORKSTATION01
+Create this user? [Y/n]: y
 
- Creating local user... ⣾
+Creating local user...
 
-──────────────────────────── Verification ────────────────────────
- Name  Enabled  PasswordNeverExpires  UserMayNotChangePassword  Member of Administrators
- erik1 True     True                  True                      Yes
+--- Verification ---
 
-Log on as 'erik1' now? [y/n]: n
+Name  Enabled PasswordNeverExpires UserMayNotChangePassword Member of Administrators
+----  ------- -------------------- ------------------------ ------------------------
+erik1 True    True                 True                     Yes
+
+Log on as 'erik1' now? [Y/n]: n
 ```
 
 ## Post-Logon Migration Script
@@ -225,7 +214,7 @@ Useful debug/testing parameters include:
 
 ### 2026-03-03 — Initial release
 
-- Created script with full interactive UI via PwshSpectreConsole
+- Created script with full interactive UI
 - Supports .env password pre-configuration
 - Auto-logon offer after successful account creation
 
@@ -240,3 +229,8 @@ Useful debug/testing parameters include:
 
 - Post-logon script: after the previous local user is removed, a follow-up prompt offers to delete `C:\Users\<old>` and its `ProfileList\<SID>` registry entry
 - Uses `Win32_UserProfile` via CIM when available (atomic registry+filesystem cleanup), with `Remove-Item` fallback for orphan profile directories
+
+### 2026-05-28 — Remove PwshSpectreConsole
+
+- Replaced all PwshSpectreConsole UI with native ConsoleUI helpers (no external module)
+- Installer no longer installs PwshSpectreConsole from the PowerShell Gallery
