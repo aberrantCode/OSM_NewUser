@@ -716,4 +716,16 @@ Describe 'Migration matches found and accepted - RunOnce migration command is re
             $Value -match '-NewUserName'
         } -Times 1 -Exactly
     }
+
+    It 'double-quotes the -File path so RunOnce/CreateProcess can launch it' {
+        # Regression guard: RunOnce executes the stored REG_SZ via CreateProcess
+        # (no shell). A single-quoted -File path is passed to powershell.exe
+        # verbatim and rejected with "The given path's format is not supported",
+        # so the migration silently never runs. The path MUST be double-quoted.
+        Should -Invoke Set-ItemProperty -Scope Describe -ParameterFilter {
+            $Name -eq '!OSM_ProfileMigration' -and
+            $Value -match '-File "[^"]*Invoke-ProfileMigrationPostLogon\.ps1"' -and
+            $Value -notmatch "-File '"
+        } -Times 1 -Exactly
+    }
 }

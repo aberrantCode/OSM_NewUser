@@ -90,10 +90,15 @@ function ConvertTo-PlainText {
 # ── Helper: reboot wrapper (mockable in Pester) ───────────────────────────────
 function Invoke-Reboot { Restart-Computer -Force }
 
-function ConvertTo-SingleQuotedLiteral {
+# Quote an argument for a native command line stored in a RunOnce REG_SZ value.
+# RunOnce launches the value through CreateProcess (no shell), so the path passed
+# to powershell.exe's -File parameter must be DOUBLE-quoted: single quotes are not
+# stripped by CommandLineToArgvW and -File then rejects the literal 'path' as
+# "The given path's format is not supported", silently aborting the migration.
+function ConvertTo-CommandLineArgument {
     param([string]$Value)
     $safeValue = if ($null -eq $Value) { '' } else { $Value }
-    return "'" + ($safeValue -replace "'", "''") + "'"
+    return '"' + ($safeValue -replace '"', '\"') + '"'
 }
 
 function Get-ProfileMigrationRules {
@@ -322,10 +327,10 @@ if ($logon) {
             'powershell.exe'
             '-NoProfile'
             '-ExecutionPolicy Bypass'
-            ('-File ' + (ConvertTo-SingleQuotedLiteral -Value $postLogonScript))
-            ('-PreviousUserName ' + (ConvertTo-SingleQuotedLiteral -Value $previousUsername))
-            ('-NewUserName ' + (ConvertTo-SingleQuotedLiteral -Value $username))
-            ('-ConfigPath ' + (ConvertTo-SingleQuotedLiteral -Value $migrationConfigPath))
+            ('-File ' + (ConvertTo-CommandLineArgument -Value $postLogonScript))
+            ('-PreviousUserName ' + (ConvertTo-CommandLineArgument -Value $previousUsername))
+            ('-NewUserName ' + (ConvertTo-CommandLineArgument -Value $username))
+            ('-ConfigPath ' + (ConvertTo-CommandLineArgument -Value $migrationConfigPath))
         ) -join ' '
         # '!' prefix tells Winlogon to delete the RunOnce entry only after the command
         # exits with code 0. Without it, the entry is deleted before execution, so a UAC
