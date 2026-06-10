@@ -86,6 +86,38 @@ function Get-UserSidByName {
     }
 }
 
+function Resolve-UserProfilePath {
+    param(
+        [Parameter(Mandatory)][string]$UserName,
+        [string]$ExplicitPath
+    )
+
+    # An explicit path (e.g. handed down from New-LocalUser.ps1 for the previous
+    # user) always wins.
+    if (-not [string]::IsNullOrWhiteSpace($ExplicitPath)) {
+        return $ExplicitPath
+    }
+
+    # The on-disk profile folder is NOT always C:\Users\<name>. When a stale
+    # C:\Users\<name> from a prior OS install already squats that name in
+    # ProfileList, Windows provisions the real profile at C:\Users\<name>.<DOMAIN>.
+    # ProfileList keyed by the account SID is the authoritative source of truth.
+    $sid = Get-UserSidByName -UserName $UserName
+    if (-not [string]::IsNullOrWhiteSpace($sid)) {
+        $profileListKey = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$sid"
+        try {
+            $imagePath = (Get-ItemProperty -Path $profileListKey -Name 'ProfileImagePath' -ErrorAction Stop).ProfileImagePath
+            if (-not [string]::IsNullOrWhiteSpace($imagePath)) {
+                return [Environment]::ExpandEnvironmentVariables($imagePath)
+            }
+        } catch {
+            # Fall through to the C:\Users\<name> default below.
+        }
+    }
+
+    return (Join-Path 'C:\Users' $UserName)
+}
+
 function Remove-UserProfileDirectory {
     [CmdletBinding(SupportsShouldProcess)]
     param(
@@ -324,10 +356,12 @@ function Initialize-MigrationLedger {
     return $newLedgerPath
 }
 
-$resolvedOldProfile = if ($PreviousUserProfilePath) { $PreviousUserProfilePath } else { Join-Path 'C:\Users' $PreviousUserName }
-$resolvedNewProfile = if ($NewUserProfilePath) { $NewUserProfilePath } else { Join-Path 'C:\Users' $NewUserName }
+$resolvedOldProfile = Resolve-UserProfilePath -UserName $PreviousUserName -ExplicitPath $PreviousUserProfilePath
+$resolvedNewProfile = Resolve-UserProfilePath -UserName $NewUserName -ExplicitPath $NewUserProfilePath
 
 Write-MigrationLog -Message "Starting profile migration from '$resolvedOldProfile' to '$resolvedNewProfile'."
+Write-MigrationLog -Message ("Previous profile resolved (explicit={0}): '{1}'." -f [bool]$PreviousUserProfilePath, $resolvedOldProfile)
+Write-MigrationLog -Message ("New profile resolved (explicit={0}): '{1}'." -f [bool]$NewUserProfilePath, $resolvedNewProfile)
 Write-MigrationLog -Message "Using config '$ConfigPath'."
 
 $migrationLedgerRelativePath = 'Documents\OSM_ProfileMigrationLog.csv'
