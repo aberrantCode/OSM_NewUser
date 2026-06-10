@@ -251,3 +251,85 @@ Describe 'Invoke-ProfileMigrationPostLogon resolves destination name collisions'
         } -Times 1 -Exactly
     }
 }
+
+Describe 'Invoke-ProfileMigrationPostLogon resolves the real new-profile dir by SID when not passed explicitly' {
+    BeforeAll {
+        Mock Test-IsElevated { $true }
+        Mock Add-Content { }
+        Mock Write-Host { }
+        Mock New-Item { }
+        Mock Copy-Item { }
+        Mock Start-Process { [PSCustomObject]@{ ExitCode = 0 } }
+
+        # Account SIDs for the name->SID lookup used by Resolve-UserProfilePath.
+        Mock Get-LocalUser {
+            param($Name)
+            $sid = if ($Name -eq 'newuser') { 'S-1-5-21-fake-1040' } else { 'S-1-5-21-fake-1039' }
+            return [PSCustomObject]@{ Name = $Name; SID = [PSCustomObject]@{ Value = $sid } }
+        }
+
+        # ProfileList records the REAL on-disk directory. The new account's real
+        # profile is suffixed (C:\Users\newuser.TESTPC) because a stale
+        # C:\Users\newuser squats the bare name — exactly the failing case.
+        Mock Get-ItemProperty {
+            param($Path, $Name)
+            if ("$Path" -like '*ProfileList\S-1-5-21-fake-1040') {
+                return [PSCustomObject]@{ ProfileImagePath = 'C:\Users\newuser.TESTPC' }
+            }
+            if ("$Path" -like '*ProfileList\S-1-5-21-fake-1039') {
+                return [PSCustomObject]@{ ProfileImagePath = 'C:\Users\olduser' }
+            }
+            throw "ProfileList entry not found for '$Path'."
+        }
+
+        Mock Test-Path {
+            param($Path, $PathType)
+            if ("$Path" -eq 'C:\tmp\cfg\ProfileMigrationPatterns.json') { return $true }
+            if ("$Path" -eq 'C:\Users\olduser\Videos\ManyCam') { return $true }
+            return $false
+        }
+
+        Mock Get-Content {
+            param($Path, [switch]$Raw)
+            if ("$Path" -eq 'C:\tmp\cfg\ProfileMigrationPatterns.json') {
+                return '[{"RelativePath":"Videos\\ManyCam","Pattern":"*.mp4","Recurse":false}]'
+            }
+            return ''
+        }
+
+        Mock Get-ChildItem {
+            param($Path, $Filter, [switch]$File, [switch]$Recurse)
+            if ("$Path" -eq 'C:\Users\olduser\Videos\ManyCam' -and $Filter -eq '*.mp4') {
+                return @([PSCustomObject]@{
+                    FullName     = 'C:\Users\olduser\Videos\ManyCam\clip_20240501.mp4'
+                    BaseName     = 'clip_20240501'
+                    Extension    = '.mp4'
+                    CreationTime = [datetime]'2024-05-01T10:30:00'
+                })
+            }
+            return @()
+        }
+
+        # NOTE: -NewUserProfilePath / -PreviousUserProfilePath intentionally omitted
+        # so resolution falls back to ProfileList-by-SID.
+        & $script:ScriptPath `
+            -PreviousUserName 'olduser' `
+            -NewUserName 'newuser' `
+            -ConfigPath 'C:\tmp\cfg\ProfileMigrationPatterns.json' `
+            -LogPath 'C:\tmp\logs\migration.log' `
+            -SkipRemovalPrompt `
+            -NonInteractive
+    }
+
+    It 'copies into the SID-resolved (suffixed) new profile directory, not C:\Users\newuser' {
+        Should -Invoke Copy-Item -Scope Describe -ParameterFilter {
+            $Destination -eq 'C:\Users\newuser.TESTPC\Videos\ManyCam\olduser - ManyCam - clip - 2024-05-01.mp4'
+        } -Times 1 -Exactly
+    }
+
+    It 'reads the source from the SID-resolved previous profile directory' {
+        Should -Invoke Copy-Item -Scope Describe -ParameterFilter {
+            $Path -eq 'C:\Users\olduser\Videos\ManyCam\clip_20240501.mp4'
+        } -Times 1 -Exactly
+    }
+}

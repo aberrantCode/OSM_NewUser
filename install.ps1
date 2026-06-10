@@ -188,15 +188,7 @@ if ($installedVersion -eq $version) {
     # If no backup existed, leave .env absent — New-LocalUser.ps1 handles missing .env interactively
 }
 
-# ── Step 8: Install PwshSpectreConsole if missing ────────────────────────────
-$spectreInstalled = Get-Module PwshSpectreConsole -ListAvailable
-if (-not $spectreInstalled) {
-    Write-Host 'Installing PwshSpectreConsole module...' -ForegroundColor Cyan
-    Install-Module PwshSpectreConsole -RequiredVersion 2.3.0 -Scope AllUsers -Force
-    Write-Host 'PwshSpectreConsole installed.' -ForegroundColor Green
-}
-
-# ── Step 9: Prompt to run ─────────────────────────────────────────────────────
+# ── Step 8: Prompt to run ─────────────────────────────────────────────────────
 $startScript = Join-Path $InstallDir 'scripts\Start-App.ps1'
 
 if (-not $env:OSM_INSTALL_SKIP_RUN_PROMPT) {
