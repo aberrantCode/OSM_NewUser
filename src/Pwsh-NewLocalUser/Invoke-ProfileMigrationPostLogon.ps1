@@ -30,30 +30,17 @@ function ConvertTo-ProcessArgument {
     return '"' + ($safeValue -replace '"', '\"') + '"'
 }
 
-if (-not (Test-IsElevated)) {
-    $elevationArgs = @(
-        '-NoProfile'
-        '-ExecutionPolicy Bypass'
-        ('-File ' + (ConvertTo-ProcessArgument -Value $PSCommandPath))
-        ('-PreviousUserName ' + (ConvertTo-ProcessArgument -Value $PreviousUserName))
-        ('-NewUserName ' + (ConvertTo-ProcessArgument -Value $NewUserName))
-        ('-ConfigPath ' + (ConvertTo-ProcessArgument -Value $ConfigPath))
-    )
-    if ($PreviousUserProfilePath) { $elevationArgs += ('-PreviousUserProfilePath ' + (ConvertTo-ProcessArgument -Value $PreviousUserProfilePath)) }
-    if ($NewUserProfilePath) { $elevationArgs += ('-NewUserProfilePath ' + (ConvertTo-ProcessArgument -Value $NewUserProfilePath)) }
-    if ($LogPath) { $elevationArgs += ('-LogPath ' + (ConvertTo-ProcessArgument -Value $LogPath)) }
-    if ($SkipRemovalPrompt) { $elevationArgs += '-SkipRemovalPrompt' }
-    if ($NonInteractive) { $elevationArgs += '-NonInteractive' }
-    if ($WhatIfPreference) { $elevationArgs += '-WhatIf' }
-
-    Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList ($elevationArgs -join ' ')
-    return
-}
-
+# Resolve the log path and define the logger FIRST — before the elevation
+# branch — so the pre-elevation relaunch (including a denied/failed UAC prompt)
+# is captured in the same file as the elevated run. With an explicit -LogPath
+# both halves share one file; with the default, the non-elevated instance
+# resolves the path and passes it down so the elevated child appends to it too.
 if ([string]::IsNullOrWhiteSpace($LogPath)) {
     $logDirectory = Join-Path $env:ProgramData 'OSM\logs'
     if (-not (Test-Path $logDirectory -PathType Container)) {
-        $null = New-Item -Path $logDirectory -ItemType Directory -Force
+        # -WhatIf:$false so the log infrastructure is always usable, even when
+        # the migration itself is running under -WhatIf.
+        $null = New-Item -Path $logDirectory -ItemType Directory -Force -WhatIf:$false
     }
     $LogPath = Join-Path $logDirectory ("profile-migration-{0}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
 }
@@ -66,14 +53,70 @@ function Write-MigrationLog {
     )
 
     $line = '[{0}] [{1}] {2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Level, $Message
-    Add-Content -Path $LogPath -Value $line
+
+    # Logging must NEVER abort the migration. -WhatIf:$false keeps the audit
+    # trail flowing even when the script as a whole runs under -WhatIf.
+    try {
+        Add-Content -Path $LogPath -Value $line -WhatIf:$false -ErrorAction Stop
+    } catch {
+        # Swallow — a failed log write is not worth failing an unattended migration.
+    }
 
     $color = switch ($Level) {
         'WARN' { 'Yellow' }
         'ERROR' { 'Red' }
         default { 'Gray' }
     }
-    Write-Host $line -ForegroundColor $color
+    try { Write-Host $line -ForegroundColor $color } catch { }
+}
+
+# Record the full invocation up front so the log is self-describing regardless
+# of which branch (elevated vs. relaunch) ends up doing the work. Logged in BOTH
+# the non-elevated parent and the elevated child, so the file shows both halves.
+$isElevated = Test-IsElevated
+$actingUser = try { [Security.Principal.WindowsIdentity]::GetCurrent().Name } catch { '<unknown>' }
+
+Write-MigrationLog -Message '===== Profile migration post-logon invoked ====='
+Write-MigrationLog -Message ("Parameters: PreviousUserName='{0}', NewUserName='{1}', ConfigPath='{2}'." -f $PreviousUserName, $NewUserName, $ConfigPath)
+Write-MigrationLog -Message ("Parameters: PreviousUserProfilePath='{0}', NewUserProfilePath='{1}', LogPath='{2}'." -f `
+    $(if ($PreviousUserProfilePath) { $PreviousUserProfilePath } else { '<resolve-by-SID>' }), `
+    $(if ($NewUserProfilePath) { $NewUserProfilePath } else { '<resolve-by-SID>' }), `
+    $LogPath)
+Write-MigrationLog -Message ("Switches: SkipRemovalPrompt={0}, NonInteractive={1}, WhatIf={2}." -f [bool]$SkipRemovalPrompt, [bool]$NonInteractive, [bool]$WhatIfPreference)
+Write-MigrationLog -Message ("Context: Elevated={0}, User='{1}', Computer='{2}', PSVersion={3}." -f $isElevated, $actingUser, $env:COMPUTERNAME, $PSVersionTable.PSVersion)
+
+if (-not $isElevated) {
+    $elevationArgs = @(
+        '-NoProfile'
+        '-ExecutionPolicy Bypass'
+        ('-File ' + (ConvertTo-ProcessArgument -Value $PSCommandPath))
+        ('-PreviousUserName ' + (ConvertTo-ProcessArgument -Value $PreviousUserName))
+        ('-NewUserName ' + (ConvertTo-ProcessArgument -Value $NewUserName))
+        ('-ConfigPath ' + (ConvertTo-ProcessArgument -Value $ConfigPath))
+        # Always forward the resolved log path so the elevated child appends to
+        # the SAME file rather than minting its own timestamped one.
+        ('-LogPath ' + (ConvertTo-ProcessArgument -Value $LogPath))
+    )
+    if ($PreviousUserProfilePath) { $elevationArgs += ('-PreviousUserProfilePath ' + (ConvertTo-ProcessArgument -Value $PreviousUserProfilePath)) }
+    if ($NewUserProfilePath) { $elevationArgs += ('-NewUserProfilePath ' + (ConvertTo-ProcessArgument -Value $NewUserProfilePath)) }
+    if ($SkipRemovalPrompt) { $elevationArgs += '-SkipRemovalPrompt' }
+    if ($NonInteractive) { $elevationArgs += '-NonInteractive' }
+    if ($WhatIfPreference) { $elevationArgs += '-WhatIf' }
+
+    $relaunchArguments = $elevationArgs -join ' '
+    Write-MigrationLog -Message 'Process is not elevated; relaunching elevated via UAC (Start-Process -Verb RunAs).'
+    Write-MigrationLog -Message ("Relaunch command: powershell.exe {0}" -f $relaunchArguments)
+
+    try {
+        Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList $relaunchArguments
+        Write-MigrationLog -Message 'Elevated relaunch started; this non-elevated instance is exiting.'
+    } catch {
+        # A cancelled/denied UAC prompt throws here. Previously this died silently
+        # before any log existed; now it is recorded before we re-throw.
+        Write-MigrationLog -Level 'ERROR' -Message ("Failed to relaunch elevated (UAC denied or unavailable?): {0}" -f $_.Exception.Message)
+        throw
+    }
+    return
 }
 
 function Get-UserSidByName {
@@ -89,12 +132,14 @@ function Get-UserSidByName {
 function Resolve-UserProfilePath {
     param(
         [Parameter(Mandatory)][string]$UserName,
-        [string]$ExplicitPath
+        [string]$ExplicitPath,
+        [string]$Label = 'user'
     )
 
     # An explicit path (e.g. handed down from New-LocalUser.ps1 for the previous
     # user) always wins.
     if (-not [string]::IsNullOrWhiteSpace($ExplicitPath)) {
+        Write-MigrationLog -Message ("Resolved {0} profile from explicit argument: '{1}'." -f $Label, $ExplicitPath)
         return $ExplicitPath
     }
 
@@ -108,14 +153,21 @@ function Resolve-UserProfilePath {
         try {
             $imagePath = (Get-ItemProperty -Path $profileListKey -Name 'ProfileImagePath' -ErrorAction Stop).ProfileImagePath
             if (-not [string]::IsNullOrWhiteSpace($imagePath)) {
-                return [Environment]::ExpandEnvironmentVariables($imagePath)
+                $expandedPath = [Environment]::ExpandEnvironmentVariables($imagePath)
+                Write-MigrationLog -Message ("Resolved {0} profile from ProfileList (SID {1}): '{2}'." -f $Label, $sid, $expandedPath)
+                return $expandedPath
             }
         } catch {
+            Write-MigrationLog -Level 'WARN' -Message ("ProfileList lookup failed for {0} (SID {1}): {2}" -f $Label, $sid, $_.Exception.Message)
             # Fall through to the C:\Users\<name> default below.
         }
+    } else {
+        Write-MigrationLog -Level 'WARN' -Message ("Could not resolve a SID for {0} '{1}'." -f $Label, $UserName)
     }
 
-    return (Join-Path 'C:\Users' $UserName)
+    $fallbackPath = Join-Path 'C:\Users' $UserName
+    Write-MigrationLog -Message ("Resolved {0} profile via C:\Users fallback: '{1}' (SID={2})." -f $Label, $fallbackPath, $(if ($sid) { $sid } else { '<none>' }))
+    return $fallbackPath
 }
 
 function Remove-UserProfileDirectory {
@@ -359,25 +411,28 @@ function Initialize-MigrationLedger {
     return $newLedgerPath
 }
 
-$resolvedOldProfile = Resolve-UserProfilePath -UserName $PreviousUserName -ExplicitPath $PreviousUserProfilePath
-$resolvedNewProfile = Resolve-UserProfilePath -UserName $NewUserName -ExplicitPath $NewUserProfilePath
+$resolvedOldProfile = Resolve-UserProfilePath -UserName $PreviousUserName -ExplicitPath $PreviousUserProfilePath -Label 'previous'
+$resolvedNewProfile = Resolve-UserProfilePath -UserName $NewUserName -ExplicitPath $NewUserProfilePath -Label 'new'
 
 Write-MigrationLog -Message "Starting profile migration from '$resolvedOldProfile' to '$resolvedNewProfile'."
-Write-MigrationLog -Message ("Previous profile resolved (explicit={0}): '{1}'." -f [bool]$PreviousUserProfilePath, $resolvedOldProfile)
-Write-MigrationLog -Message ("New profile resolved (explicit={0}): '{1}'." -f [bool]$NewUserProfilePath, $resolvedNewProfile)
 Write-MigrationLog -Message "Using config '$ConfigPath'."
 
 $migrationLedgerRelativePath = 'Documents\OSM_ProfileMigrationLog.csv'
 $migrationLedgerPath = Initialize-MigrationLedger -OldProfilePath $resolvedOldProfile -NewProfilePath $resolvedNewProfile -RelativeLedgerPath $migrationLedgerRelativePath
+Write-MigrationLog -Message ("Migration ledger: '{0}'." -f $migrationLedgerPath)
 
 $copiedCount = 0
 $failedCount = 0
+$skippedCount = 0
 $rules = Get-MigrationRules -Path $ConfigPath
+Write-MigrationLog -Message ("Loaded {0} migration rule(s) from '{1}'." -f @($rules).Count, $ConfigPath)
 $newUserPrincipal = "$env:COMPUTERNAME\$NewUserName"
 
 foreach ($rule in $rules) {
+    $ruleLabel = '{0}\{1}' -f $rule.RelativePath, $rule.Pattern
     $sourcePath = Join-Path $resolvedOldProfile $rule.RelativePath
     if (-not (Test-Path $sourcePath -PathType Container)) {
+        Write-MigrationLog -Message ("Rule '{0}': source directory '{1}' not found; skipping." -f $ruleLabel, $sourcePath)
         continue
     }
 
@@ -391,18 +446,20 @@ foreach ($rule in $rules) {
     $matched = @(Get-ChildItem @getChildItemArgs)
 
     if ($matched.Count -eq 0) {
+        Write-MigrationLog -Message ("Rule '{0}': matched 0 file(s) in '{1}'; skipping." -f $ruleLabel, $sourcePath)
         continue
     }
 
-    Write-MigrationLog -Message ("Rule '{0}\{1}' matched {2} file(s)." -f $rule.RelativePath, $rule.Pattern, $matched.Count)
+    Write-MigrationLog -Message ("Rule '{0}': matched {1} file(s) in '{2}'." -f $ruleLabel, $matched.Count, $sourcePath)
 
     try {
         if ($PSCmdlet.ShouldProcess($sourcePath, "Grant modify access for $newUserPrincipal")) {
             $grantArgs = @($sourcePath, '/grant', "${newUserPrincipal}:(OI)(CI)M", '/T', '/C')
             $grantProcess = Start-Process -FilePath 'icacls.exe' -ArgumentList $grantArgs -PassThru -Wait -NoNewWindow
-            if ($grantProcess.ExitCode -ne 0) {
-                Write-MigrationLog -Level 'WARN' -Message "icacls exited with code $($grantProcess.ExitCode) for '$sourcePath'."
-            }
+            $grantLevel = if ($grantProcess.ExitCode -eq 0) { 'INFO' } else { 'WARN' }
+            Write-MigrationLog -Level $grantLevel -Message ("icacls grant for '{0}' exited with code {1}." -f $sourcePath, $grantProcess.ExitCode)
+        } else {
+            Write-MigrationLog -Message ("WhatIf: would grant modify access for {0} on '{1}'." -f $newUserPrincipal, $sourcePath)
         }
     } catch {
         Write-MigrationLog -Level 'WARN' -Message "Failed to grant ACLs for '$sourcePath': $($_.Exception.Message)"
@@ -437,8 +494,14 @@ foreach ($rule in $rules) {
             if ($PSCmdlet.ShouldProcess($destinationFile, "Copy '$($file.FullName)'")) {
                 Copy-Item -Path $file.FullName -Destination $destinationFile -Force
                 Add-MigrationLedgerRow -LedgerPath $migrationLedgerPath -SourceFilePath $file.FullName -DestinationFilePath $destinationFile
+                $copiedCount++
+                Write-MigrationLog -Message ("Copied '{0}' -> '{1}'." -f $file.FullName, $destinationFile)
+            } else {
+                # ShouldProcess returned $false (e.g. running under -WhatIf): record
+                # the intended action without performing it, and don't count it as copied.
+                $skippedCount++
+                Write-MigrationLog -Message ("WhatIf: would copy '{0}' -> '{1}'." -f $file.FullName, $destinationFile)
             }
-            $copiedCount++
         } catch {
             $failedCount++
             Write-MigrationLog -Level 'WARN' -Message "Failed to copy '$($file.FullName)' to '$destinationFile': $($_.Exception.Message)"
@@ -446,17 +509,26 @@ foreach ($rule in $rules) {
     }
 }
 
-$summary = "Migration complete. Copied: $copiedCount. Failed: $failedCount. Log: $LogPath"
+$summary = "Migration complete. Copied: $copiedCount. Skipped (WhatIf): $skippedCount. Failed: $failedCount. Log: $LogPath"
 Write-MigrationLog -Message $summary
 Write-Host $summary -ForegroundColor Green
 
-if (-not $SkipRemovalPrompt -and -not $NonInteractive -and $PreviousUserName -ne $NewUserName) {
+# Log WHY removal does/doesn't happen so the absence of a removal is never
+# ambiguous in the audit trail.
+if ($SkipRemovalPrompt) {
+    Write-MigrationLog -Message 'Skipping previous-user removal (SkipRemovalPrompt set).'
+} elseif ($NonInteractive) {
+    Write-MigrationLog -Message 'Skipping previous-user removal (NonInteractive set; no console to prompt on).'
+} elseif ($PreviousUserName -eq $NewUserName) {
+    Write-MigrationLog -Message 'Skipping previous-user removal (previous and new user names are identical).'
+} else {
     $removeResponse = Read-Host "Remove previous local user '$PreviousUserName' from this workstation? (Y/N)"
     if ($removeResponse -match '^(?i)y(?:es)?$') {
         # Capture SID *before* Remove-LocalUser so we can later look up the
         # Win32_UserProfile by SID. After the account is gone Get-LocalUser
         # can no longer resolve the name.
         $previousUserSid = Get-UserSidByName -UserName $PreviousUserName
+        Write-MigrationLog -Message ("User chose to remove previous user '{0}'. Captured SID before removal: {1}." -f $PreviousUserName, $(if ($previousUserSid) { $previousUserSid } else { '<none>' }))
 
         try {
             if ($PSCmdlet.ShouldProcess($PreviousUserName, 'Remove local user')) {
@@ -474,6 +546,7 @@ if (-not $SkipRemovalPrompt -and -not $NonInteractive -and $PreviousUserName -ne
         $profileDirExists      = Test-Path $resolvedOldProfile -PathType Container
         $hasProfileListEntry   = (-not [string]::IsNullOrWhiteSpace($previousUserSid)) -and `
                                  (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$previousUserSid")
+        Write-MigrationLog -Message ("Profile cleanup check: directory exists={0}, ProfileList entry present={1}." -f $profileDirExists, $hasProfileListEntry)
         if ($profileDirExists -or $hasProfileListEntry) {
             $removeDirResponse = Read-Host "Also remove the previous user's profile directory '$resolvedOldProfile' (and registry entries)? (Y/N)"
             if ($removeDirResponse -match '^(?i)y(?:es)?$') {
@@ -484,10 +557,10 @@ if (-not $SkipRemovalPrompt -and -not $NonInteractive -and $PreviousUserName -ne
                     Write-MigrationLog -Level 'WARN' -Message "Failed to remove profile directory '$resolvedOldProfile': $($_.Exception.Message)"
                 }
             } else {
-                Write-MigrationLog -Message "Profile directory '$resolvedOldProfile' was kept."
+                Write-MigrationLog -Message "Profile directory '$resolvedOldProfile' was kept (user declined)."
             }
         }
     } else {
-        Write-MigrationLog -Message "Previous user '$PreviousUserName' was kept."
+        Write-MigrationLog -Message "Previous user '$PreviousUserName' was kept (user declined removal)."
     }
 }
