@@ -168,6 +168,7 @@ BeforeAll {
         # Registry + logoff + .env write
         Mock Set-ItemProperty { }
         Mock Set-Content      { }
+        Mock Add-Content      { }   # setup log writes — keep inert in tests
         Mock Invoke-Reboot    { }
 
         # OOBE privacy-screen suppression
@@ -727,5 +728,19 @@ Describe 'Migration matches found and accepted - RunOnce migration command is re
             $Value -match '-File "[^"]*Invoke-ProfileMigrationPostLogon\.ps1"' -and
             $Value -notmatch "-File '"
         } -Times 1 -Exactly
+    }
+
+    It 'passes the operator profile path explicitly via -PreviousUserProfilePath' {
+        # The on-disk profile dir is not always C:\Users\<name>; hand the post-logon
+        # script the operator's authoritative profile path instead of letting it guess.
+        Should -Invoke Set-ItemProperty -Scope Describe -ParameterFilter {
+            $Name -eq '!OSM_ProfileMigration' -and $Value -match '-PreviousUserProfilePath "'
+        } -Times 1 -Exactly
+    }
+
+    It 'writes a setup log capturing the registered RunOnce command' {
+        Should -Invoke Add-Content -Scope Describe -ParameterFilter {
+            "$Value" -match 'Registered RunOnce' -and "$Value" -match 'Invoke-ProfileMigrationPostLogon\.ps1'
+        }
     }
 }

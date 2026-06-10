@@ -41,6 +41,29 @@ if (-not (Get-Command Write-AppHost -ErrorAction SilentlyContinue)) {
     . (Join-Path $PSScriptRoot 'ConsoleUI.ps1')
 }
 
+# ── Setup logging ─────────────────────────────────────────────────────────────
+# Persist the runtime values used by this creation run. The post-logon migration
+# does not actually execute until the new user's first logon (much later), so
+# without a record here there is no way to see, after the fact, exactly what was
+# queued — which is precisely what made a malformed RunOnce command invisible.
+$script:SetupLogPath = $null
+function Initialize-SetupLog {
+    $logDir = Join-Path $env:ProgramData 'OSM\logs'
+    if (-not (Test-Path $logDir -PathType Container)) {
+        $null = New-Item -Path $logDir -ItemType Directory -Force
+    }
+    $script:SetupLogPath = Join-Path $logDir ("new-localuser-{0}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+}
+function Write-SetupLog {
+    param([string]$Message)
+    if ([string]::IsNullOrEmpty($script:SetupLogPath)) { return }
+    $line = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message
+    # Never fatal: logging must not break account creation.
+    try { Add-Content -Path $script:SetupLogPath -Value $line -ErrorAction Stop } catch { }
+}
+Initialize-SetupLog
+Write-SetupLog ("Run started. Operator='{0}' Computer='{1}' OperatorProfile='{2}'" -f $env:USERNAME, $env:COMPUTERNAME, $env:USERPROFILE)
+
 # ── Helper: resolve .env file path ───────────────────────────────────────────
 # Declared as a function so Pester can mock it.
 function Get-EnvFilePath {
@@ -314,11 +337,16 @@ if ($migrationCandidates.Count -gt 0) {
     foreach ($candidate in $migrationCandidates) {
         $patterns = ($candidate.Pattern | Sort-Object) -join ', '
         Write-AppHost ("[grey]- {0} ({1}) : {2} file(s)[/]" -f $candidate.RelativePath, $patterns, $candidate.Count)
+        Write-SetupLog ("Migration candidate: '{0}' ({1}) -> {2} file(s)." -f $candidate.RelativePath, $patterns, $candidate.Count)
     }
     $migrateProfileAssets = Read-AppConfirm -Message "Migrate these files into '$username' after first logon?"
+} else {
+    Write-SetupLog "No migration candidates found in operator profile."
 }
+Write-SetupLog ("New user='{0}'. Previous user='{1}'. Migrate accepted={2}." -f $username, $previousUsername, $migrateProfileAssets)
 
 $logon = Read-AppConfirm -Message "Log on as '$username' now?"
+Write-SetupLog ("Auto-logon accepted={0}." -f $logon)
 if ($logon) {
     if ($migrateProfileAssets) {
         $postLogonScript = Join-Path $PSScriptRoot 'Invoke-ProfileMigrationPostLogon.ps1'
@@ -331,11 +359,19 @@ if ($logon) {
             ('-PreviousUserName ' + (ConvertTo-CommandLineArgument -Value $previousUsername))
             ('-NewUserName ' + (ConvertTo-CommandLineArgument -Value $username))
             ('-ConfigPath ' + (ConvertTo-CommandLineArgument -Value $migrationConfigPath))
+            # Pass the operator's real profile directory explicitly. The on-disk
+            # folder is not always C:\Users\<name> (a stale profile from a prior
+            # install can force a C:\Users\<name>.<DOMAIN> suffix), so we hand the
+            # post-logon script the authoritative source path rather than letting
+            # it guess. The new user's profile does not exist yet, so the script
+            # resolves that one by SID at first logon.
+            ('-PreviousUserProfilePath ' + (ConvertTo-CommandLineArgument -Value $env:USERPROFILE))
         ) -join ' '
         # '!' prefix tells Winlogon to delete the RunOnce entry only after the command
         # exits with code 0. Without it, the entry is deleted before execution, so a UAC
         # denial would lose the migration permanently.
         Set-ItemProperty -Path $runOncePath -Name '!OSM_ProfileMigration' -Value $runOnceValue -Type String
+        Write-SetupLog ("Registered RunOnce '{0}\!OSM_ProfileMigration' = {1}" -f $runOncePath, $runOnceValue)
         Write-AppHost "[grey]Profile migration queued for first logon of '$username'.[/]"
     }
 
