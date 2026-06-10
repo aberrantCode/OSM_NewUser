@@ -333,3 +333,60 @@ Describe 'Invoke-ProfileMigrationPostLogon resolves the real new-profile dir by 
         } -Times 1 -Exactly
     }
 }
+
+Describe 'Invoke-ProfileMigrationPostLogon names files in a top-level shell folder with the full folder name' {
+    BeforeAll {
+        Mock Test-IsElevated { $true }
+        Mock Add-Content { }
+        Mock Write-Host { }
+        Mock New-Item { }
+        Mock Copy-Item { }
+        Mock Start-Process { [PSCustomObject]@{ ExitCode = 0 } }
+
+        Mock Test-Path {
+            param($Path, $PathType)
+            if ("$Path" -eq 'C:\tmp\cfg\ProfileMigrationPatterns.json') { return $true }
+            if ("$Path" -eq 'C:\tmp\users\olduser\Videos') { return $true }
+            return $false
+        }
+
+        Mock Get-Content {
+            param($Path, [switch]$Raw)
+            if ("$Path" -eq 'C:\tmp\cfg\ProfileMigrationPatterns.json') {
+                return '[{"RelativePath":"Videos","Pattern":"*.mkv","Recurse":false}]'
+            }
+            return ''
+        }
+
+        Mock Get-ChildItem {
+            param($Path, $Filter, [switch]$File, [switch]$Recurse)
+            if ("$Path" -eq 'C:\tmp\users\olduser\Videos' -and $Filter -eq '*.mkv') {
+                return @([PSCustomObject]@{
+                    FullName     = 'C:\tmp\users\olduser\Videos\2026-06-08 13-25-26.mkv'
+                    BaseName     = '2026-06-08 13-25-26'
+                    Extension    = '.mkv'
+                    CreationTime = [datetime]'2026-06-08T18:00:00'
+                })
+            }
+            return @()
+        }
+
+        & $script:ScriptPath `
+            -PreviousUserName 'olduser' `
+            -NewUserName 'newuser' `
+            -ConfigPath 'C:\tmp\cfg\ProfileMigrationPatterns.json' `
+            -PreviousUserProfilePath 'C:\tmp\users\olduser' `
+            -NewUserProfilePath 'C:\tmp\users\newuser' `
+            -LogPath 'C:\tmp\logs\migration.log' `
+            -SkipRemovalPrompt `
+            -NonInteractive
+    }
+
+    It 'uses the full folder name (Videos), not its first letter (regression for the scalar-index bug)' {
+        # A file directly in a single-segment shell folder previously collapsed the
+        # source component to 'V' because $parts unwrapped to a scalar string.
+        Should -Invoke Copy-Item -Scope Describe -ParameterFilter {
+            $Destination -eq 'C:\tmp\users\newuser\Videos\olduser - Videos - 13 25 26 - 2026-06-08.mkv'
+        } -Times 1 -Exactly
+    }
+}
