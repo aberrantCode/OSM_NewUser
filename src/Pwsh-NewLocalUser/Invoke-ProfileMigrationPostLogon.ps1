@@ -226,7 +226,10 @@ function ConvertTo-SourceNameComponent {
     $shellFolders = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     @('Desktop', 'Documents', 'Downloads', 'Pictures', 'Videos', 'Music') | ForEach-Object { [void]$shellFolders.Add($_) }
 
-    $parts = @($RelativeDirectory -split '[\\/]+') | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    # Wrap the whole pipeline in @(): a single passing segment would otherwise be
+    # unwrapped into a scalar string, so $parts[0] below would index the STRING and
+    # return its first character (e.g. 'Videos' -> 'V') instead of the segment.
+    $parts = @(@($RelativeDirectory -split '[\\/]+') | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     $meaningful = New-Object System.Collections.Generic.List[string]
 
     foreach ($part in $parts) {
