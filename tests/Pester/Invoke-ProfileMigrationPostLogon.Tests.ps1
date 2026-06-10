@@ -17,6 +17,12 @@ Describe 'Invoke-ProfileMigrationPostLogon auto-elevates when needed' {
     BeforeAll {
         Mock Test-IsElevated { $false }
         Mock Start-Process { }
+        # The pre-elevation branch now resolves a default log path and logs to it
+        # before relaunching; mock the filesystem so the test touches no real disk.
+        Mock Add-Content { }
+        Mock Write-Host { }
+        Mock New-Item { }
+        Mock Test-Path { $true }
 
         & $script:ScriptPath -PreviousUserName 'olduser' -NewUserName 'newuser' -NonInteractive -SkipRemovalPrompt
     }
@@ -250,6 +256,12 @@ Describe 'Invoke-ProfileMigrationPostLogon resolves destination name collisions'
             $Destination -eq 'C:\tmp\users\newuser\Documents\ShareX\Screenshots\2025-11\olduser - ShareX - Screenshots - clip - 2025-11-30 1.mp4'
         } -Times 1 -Exactly
     }
+
+    It 'logs why previous-user removal was skipped' {
+        Should -Invoke Add-Content -Scope Describe -ParameterFilter {
+            "$Value" -like '*Skipping previous-user removal*' -and "$Value" -like '*SkipRemovalPrompt*'
+        }
+    }
 }
 
 Describe 'Invoke-ProfileMigrationPostLogon resolves the real new-profile dir by SID when not passed explicitly' {
@@ -332,6 +344,12 @@ Describe 'Invoke-ProfileMigrationPostLogon resolves the real new-profile dir by 
             $Path -eq 'C:\Users\olduser\Videos\ManyCam\clip_20240501.mp4'
         } -Times 1 -Exactly
     }
+
+    It 'logs the SID and ProfileList resolution method for the new profile' {
+        Should -Invoke Add-Content -Scope Describe -ParameterFilter {
+            "$Value" -like '*ProfileList*' -and "$Value" -like '*S-1-5-21-fake-1040*'
+        }
+    }
 }
 
 Describe 'Invoke-ProfileMigrationPostLogon names files in a top-level shell folder with the full folder name' {
@@ -388,5 +406,215 @@ Describe 'Invoke-ProfileMigrationPostLogon names files in a top-level shell fold
         Should -Invoke Copy-Item -Scope Describe -ParameterFilter {
             $Destination -eq 'C:\tmp\users\newuser\Videos\olduser - Videos - 13 25 26 - 2026-06-08.mkv'
         } -Times 1 -Exactly
+    }
+}
+
+Describe 'Invoke-ProfileMigrationPostLogon logs the pre-elevation relaunch branch' {
+    BeforeAll {
+        Mock Test-IsElevated { $false }
+        Mock Start-Process { }
+        Mock Add-Content { }
+        Mock Write-Host { }
+        Mock New-Item { }
+        Mock Test-Path { $true }
+
+        # No -LogPath on purpose: the NON-elevated instance must resolve a default
+        # log path, log to it, and pass that same path down to the elevated child.
+        & $script:ScriptPath `
+            -PreviousUserName 'olduser' `
+            -NewUserName 'newuser' `
+            -ConfigPath 'C:\tmp\cfg\ProfileMigrationPatterns.json' `
+            -NonInteractive -SkipRemovalPrompt
+    }
+
+    It 'logs that the process is not elevated before relaunching' {
+        Should -Invoke Add-Content -Scope Describe -ParameterFilter { "$Value" -like '*not elevated*' }
+    }
+
+    It 'logs the invocation parameter values' {
+        Should -Invoke Add-Content -Scope Describe -ParameterFilter {
+            "$Value" -like '*PreviousUserName*' -and "$Value" -like '*olduser*'
+        }
+        Should -Invoke Add-Content -Scope Describe -ParameterFilter { "$Value" -like '*NewUserName*' -and "$Value" -like '*newuser*' }
+    }
+
+    It 'logs the exact argument list used to relaunch elevated' {
+        Should -Invoke Add-Content -Scope Describe -ParameterFilter {
+            "$Value" -like '*Relaunch*' -and "$Value" -like '*-PreviousUserName*' -and "$Value" -like '*-LogPath*'
+        }
+    }
+
+    It 'logs execution context including elevation state and PowerShell version' {
+        Should -Invoke Add-Content -Scope Describe -ParameterFilter {
+            "$Value" -like '*Elevated=False*' -and "$Value" -like '*PSVersion=*'
+        }
+    }
+
+    It 'passes -LogPath to the elevated relaunch so both halves share one log file' {
+        Should -Invoke Start-Process -Scope Describe -ParameterFilter {
+            $FilePath -eq 'powershell.exe' -and ($ArgumentList -join ' ') -like '*-LogPath*'
+        }
+    }
+}
+
+Describe 'Invoke-ProfileMigrationPostLogon logs full runtime detail under an elevated run' {
+    BeforeAll {
+        Mock Test-IsElevated { $true }
+        Mock Add-Content { }
+        Mock Write-Host { }
+        Mock New-Item { }
+        Mock Copy-Item { }
+        Mock Remove-LocalUser { }
+        Mock Remove-Item { }
+        Mock Read-Host { 'Y' }
+        Mock Start-Process { [PSCustomObject]@{ ExitCode = 0 } }
+        Mock Get-LocalUser {
+            param($Name)
+            return [PSCustomObject]@{ Name = $Name; SID = [PSCustomObject]@{ Value = 'S-1-5-21-fake-7007' } }
+        }
+        Mock Get-CimInstance { return $null }
+        Mock Remove-CimInstance { }
+
+        Mock Test-Path {
+            param($Path, $PathType)
+            if ("$Path" -eq 'C:\tmp\cfg\ProfileMigrationPatterns.json') { return $true }
+            if ("$Path" -eq 'C:\tmp\users\olduser\Videos\ManyCam') { return $true }
+            if ("$Path" -eq 'C:\tmp\users\olduser') { return $true }
+            if ("$Path" -eq 'C:\tmp\logs') { return $true }
+            return $false
+        }
+
+        Mock Get-Content {
+            param($Path, [switch]$Raw)
+            if ("$Path" -eq 'C:\tmp\cfg\ProfileMigrationPatterns.json') {
+                return '[{"RelativePath":"Videos\\ManyCam","Pattern":"*.mp4","Recurse":false},{"RelativePath":"Documents\\Missing","Pattern":"*.txt","Recurse":false}]'
+            }
+            return ''
+        }
+
+        Mock Get-ChildItem {
+            param($Path, $Filter, [switch]$File, [switch]$Recurse)
+            if ("$Path" -eq 'C:\tmp\users\olduser\Videos\ManyCam' -and $Filter -eq '*.mp4') {
+                return @([PSCustomObject]@{
+                    FullName = 'C:\tmp\users\olduser\Videos\ManyCam\clip_20240501.mp4'
+                    BaseName = 'clip_20240501'
+                    Extension = '.mp4'
+                    CreationTime = [datetime]'2024-05-01T10:30:00'
+                })
+            }
+            return @()
+        }
+
+        & $script:ScriptPath `
+            -PreviousUserName 'olduser' `
+            -NewUserName 'newuser' `
+            -ConfigPath 'C:\tmp\cfg\ProfileMigrationPatterns.json' `
+            -PreviousUserProfilePath 'C:\tmp\users\olduser' `
+            -NewUserProfilePath 'C:\tmp\users\newuser' `
+            -LogPath 'C:\tmp\logs\migration.log'
+    }
+
+    It 'logs the invocation parameters and config path' {
+        Should -Invoke Add-Content -Scope Describe -ParameterFilter {
+            "$Value" -like '*PreviousUserName*' -and "$Value" -like '*olduser*'
+        }
+        Should -Invoke Add-Content -Scope Describe -ParameterFilter { "$Value" -like '*ConfigPath*' }
+    }
+
+    It 'logs execution context (elevated, computer, PowerShell version)' {
+        Should -Invoke Add-Content -Scope Describe -ParameterFilter {
+            "$Value" -like '*Elevated=True*' -and "$Value" -like '*PSVersion=*' -and "$Value" -like '*Computer=*'
+        }
+    }
+
+    It 'logs how many rules were loaded and the ledger path' {
+        Should -Invoke Add-Content -Scope Describe -ParameterFilter { "$Value" -like '*Loaded 2*rule*' }
+        Should -Invoke Add-Content -Scope Describe -ParameterFilter {
+            "$Value" -like '*ledger*' -and "$Value" -like '*OSM_ProfileMigrationLog.csv*'
+        }
+    }
+
+    It 'logs rules whose source directory is absent instead of silently skipping' {
+        Should -Invoke Add-Content -Scope Describe -ParameterFilter {
+            "$Value" -like '*Documents\Missing*' -and "$Value" -like '*not found*'
+        }
+    }
+
+    It 'logs each icacls grant exit code, including success' {
+        Should -Invoke Add-Content -Scope Describe -ParameterFilter {
+            "$Value" -like '*icacls*' -and "$Value" -like '*code 0*'
+        }
+    }
+
+    It 'logs each successful file copy with source and destination' {
+        Should -Invoke Add-Content -Scope Describe -ParameterFilter {
+            "$Value" -like '*Copied*' -and
+            "$Value" -like '*clip_20240501.mp4*' -and
+            "$Value" -like '*olduser - ManyCam - clip - 2024-05-01.mp4*'
+        }
+    }
+
+    It 'logs the previous-user SID captured before account removal' {
+        Should -Invoke Add-Content -Scope Describe -ParameterFilter { "$Value" -like '*S-1-5-21-fake-7007*' }
+    }
+}
+
+Describe 'Invoke-ProfileMigrationPostLogon honors -WhatIf while still logging intended actions' {
+    BeforeAll {
+        Mock Test-IsElevated { $true }
+        Mock Add-Content { }
+        Mock Write-Host { }
+        Mock New-Item { }
+        Mock Copy-Item { }
+        Mock Start-Process { [PSCustomObject]@{ ExitCode = 0 } }
+
+        Mock Test-Path {
+            param($Path, $PathType)
+            if ("$Path" -eq 'C:\tmp\cfg\ProfileMigrationPatterns.json') { return $true }
+            if ("$Path" -eq 'C:\tmp\users\olduser\Videos\ManyCam') { return $true }
+            return $false
+        }
+        Mock Get-Content {
+            param($Path, [switch]$Raw)
+            if ("$Path" -eq 'C:\tmp\cfg\ProfileMigrationPatterns.json') {
+                return '[{"RelativePath":"Videos\\ManyCam","Pattern":"*.mp4","Recurse":false}]'
+            }
+            return ''
+        }
+        Mock Get-ChildItem {
+            param($Path, $Filter, [switch]$File, [switch]$Recurse)
+            if ("$Path" -eq 'C:\tmp\users\olduser\Videos\ManyCam' -and $Filter -eq '*.mp4') {
+                return @([PSCustomObject]@{
+                    FullName = 'C:\tmp\users\olduser\Videos\ManyCam\clip_20240501.mp4'
+                    BaseName = 'clip_20240501'
+                    Extension = '.mp4'
+                    CreationTime = [datetime]'2024-05-01T10:30:00'
+                })
+            }
+            return @()
+        }
+
+        & $script:ScriptPath `
+            -PreviousUserName 'olduser' `
+            -NewUserName 'newuser' `
+            -ConfigPath 'C:\tmp\cfg\ProfileMigrationPatterns.json' `
+            -PreviousUserProfilePath 'C:\tmp\users\olduser' `
+            -NewUserProfilePath 'C:\tmp\users\newuser' `
+            -LogPath 'C:\tmp\logs\migration.log' `
+            -SkipRemovalPrompt -NonInteractive -WhatIf
+    }
+
+    It 'does not actually copy any file under -WhatIf' {
+        Should -Invoke Copy-Item -Times 0 -Exactly -Scope Describe
+    }
+
+    It 'still writes the log under -WhatIf' {
+        Should -Invoke Add-Content -Scope Describe -ParameterFilter { "$Value" -like '*Elevated=True*' }
+    }
+
+    It 'logs the copy it would have performed' {
+        Should -Invoke Add-Content -Scope Describe -ParameterFilter {
+            "$Value" -like '*WhatIf*' -and "$Value" -like '*would copy*' -and "$Value" -like '*clip_20240501.mp4*'
+        }
     }
 }
