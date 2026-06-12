@@ -27,6 +27,57 @@ $InstallDir   = 'C:\osm\new-localuser'
 $ApiUrl       = 'https://api.github.com/repos/aberrantCode/OSM_NewUser/releases/latest'
 $RawInstallerUrl = 'https://raw.githubusercontent.com/aberrantCode/OSM_NewUser/main/install.ps1'
 
+# ── Functions ─────────────────────────────────────────────────────────────────
+function Set-InstallPayload {
+    <#
+    .SYNOPSIS
+        Swap a freshly staged release into the install directory, in place.
+
+    .DESCRIPTION
+        Replaces the *contents* of $InstallDir with the contents of $SourceDir
+        (the validated, extracted release payload), rather than deleting and
+        recreating $InstallDir itself.
+
+        This is required for self-updates: the launcher (Start-App.ps1) runs from
+        inside $InstallDir, so $InstallDir is the updating process's current
+        working directory. Windows refuses to delete a directory that is a running
+        process's current directory ("Cannot remove the item ... because it is in
+        use"). Clearing the children and moving the new payload in keeps the
+        directory handle valid throughout, so the update succeeds whether the
+        installer runs from inside the install dir (self-update) or elsewhere
+        (remote one-liner / first-time install).
+
+        Any existing .env is backed up and restored by the caller around this
+        swap, so clearing the directory contents here is safe.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$SourceDir,
+        [Parameter(Mandatory)][string]$InstallDir
+    )
+
+    if (Test-Path $InstallDir) {
+        # Remove existing children (files + subdirectories) but keep $InstallDir
+        # itself — it may be the running process's locked working directory.
+        Get-ChildItem -LiteralPath $InstallDir -Force | Remove-Item -Recurse -Force
+    } else {
+        # First-time install: create the target (New-Item creates missing parents
+        # such as C:\osm) before moving the payload in.
+        New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+    }
+
+    # Move the payload's children into the now-empty install directory.
+    Get-ChildItem -LiteralPath $SourceDir -Force | Move-Item -Destination $InstallDir
+
+    # Remove the now-empty staging root.
+    Remove-Item -LiteralPath $SourceDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# Allow tests to dot-source this script to load the functions above without
+# running the installer. When dot-sourced, $MyInvocation.InvocationName is '.';
+# under normal execution (`irm ... | iex`, `& script.ps1`) it is not, so the
+# installer body below runs as usual.
+if ($MyInvocation.InvocationName -eq '.') { return }
+
 # ── Auto-elevation ────────────────────────────────────────────────────────────
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -116,19 +167,10 @@ if ($installedVersion -eq $version) {
         exit 1
     }
 
-    # Payload is good — now swap it in.
-    if (Test-Path $InstallDir) {
-        Remove-Item -Path $InstallDir -Recurse -Force
-    }
-
-    # Move-Item does not create missing parent directories, so on a first-time
-    # install (where C:\osm does not exist yet) we must create the parent first.
-    $installParent = Split-Path -Path $InstallDir -Parent
-    if (-not (Test-Path $installParent)) {
-        New-Item -ItemType Directory -Path $installParent -Force | Out-Null
-    }
-
-    Move-Item -Path $extractedRoot.FullName -Destination $InstallDir
+    # Payload is good — now swap it in. Replace the directory contents in place
+    # so the update succeeds even when the install dir is the running process's
+    # current working directory (the self-update case — see Set-InstallPayload).
+    Set-InstallPayload -SourceDir $extractedRoot.FullName -InstallDir $InstallDir
 
     # Cleanup temp files
     Remove-Item -Path $zipPath    -Force -ErrorAction SilentlyContinue
